@@ -11,7 +11,7 @@ numpy, scipy, mpmath, qutip,
 
 matplotlib in version 1 &
 
-vpython in version 2
+vpython in version 2+
 
 tested on mac os 10.12.6
 
