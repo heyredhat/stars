@@ -1,0 +1,3 @@
+# install anaconda
+conda install -c vpython vpython
+conda install --channel "conda-forge" qutip
