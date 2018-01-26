@@ -1,6 +1,7 @@
 geocoder
 ephem
 sympy
+cython
 qutip
 vpython
 mpmath
