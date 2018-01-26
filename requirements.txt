@@ -1,6 +1,6 @@
 numpy
 scipy
-matplotlib=
+matplotlib
 cython
 geocoder
 ephem
