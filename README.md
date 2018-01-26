@@ -10,6 +10,6 @@ beware!
 study the dependencies closely--
 use conda
 
-or run live here:
+or
 
-https://hub.mybinder.org/user/heyredhat-stars-x2oqbpa1/
+[![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/heyredhat/stars/master)
