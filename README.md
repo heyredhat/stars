@@ -10,3 +10,6 @@ beware!
 study the dependencies closely--
 use conda
 
+or run live here:
+
+https://hub.mybinder.org/user/heyredhat-stars-x2oqbpa1/
