@@ -13,3 +13,5 @@ use conda
 or
 
 [![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/heyredhat/stars/master)
+
+note: you'll have to disable all keyboard shortcuts
