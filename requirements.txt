@@ -1,0 +1,13 @@
+geocoder
+ephem
+ephem.stars
+datetime
+math
+cmath
+sympy
+functools
+numpy
+qutip
+random
+vpython
+mpmath
