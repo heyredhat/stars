@@ -1,7 +1,7 @@
-numpy
-scipy
-matplotlib
-cython
+numpy>=1.8
+scipy>=0.15
+matplotlib>=1.21
+cython>=0.21
 geocoder
 ephem
 sympy
