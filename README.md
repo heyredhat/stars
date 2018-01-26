@@ -3,6 +3,7 @@ various iterations of
 majorana's stellar representation
 of quantum mechanics
 
+the hot shit now is astrology3
 
 beware!
 
