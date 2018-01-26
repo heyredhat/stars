@@ -6,6 +6,6 @@ of quantum mechanics
 
 beware!
 
-study the dependencies closely!
+study the dependencies closely--
 use conda
 
