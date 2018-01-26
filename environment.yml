@@ -1,0 +1,15 @@
+name: tsi-environment
+channels:
+  - conda-forge
+  - vpython
+dependencies:
+  - numpy
+  - scipy
+  - matplotlib
+  - cython
+  - qutip
+  - geocoder
+  - ephem
+  - sympy
+  - mpmath
+  - vpython
