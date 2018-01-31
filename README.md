@@ -1,6 +1,6 @@
 # stars
 
-A spherical representation can help visualize many branches of physics and mathematics. This python notebook helps you explore tangibly the relationship between perspectival geometry, relativity theory, quantum mechanics, astronomy, and the abstract number theory joining complex vector spaces and polynomial equations--not to mention a nod to the art of map-making!
+A spherical representation can help visualize many branches of mathematics and physics. This python notebook helps you explore tangibly the relationship between perspectival geometry, relativity theory, quantum mechanics, astronomy, and the abstract number theory joining complex vector spaces and polynomial equations--not to mention a nod to the art of map-making! Click launch binder to build a jupyter python notebook environment in the cloud. It may take a few minutes to install dependencies. When you're in, open up astrologonpy.ipynb and run all cells. If it fucks up, try restarting the kernel. 
 
 [![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/heyredhat/stars/master)
 
