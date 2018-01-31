@@ -1,4 +1,4 @@
-### stars
+# stars
 
 A spherical representation can help visualize many branches of physics and mathematics. This python notebook helps you explore tangibly the relationship between perspectival geometry, relativity theory, quantum mechanics, astronomy, and the abstract number theory joining complex vector spaces and polynomial equations--not to mention a nod to the art of map-making!
 
@@ -6,7 +6,7 @@ A spherical representation can help visualize many branches of physics and mathe
 
 ## controls
 
-# keyboard
+### keyboard
 
 Make sure to disable keyboard shortcuts!
 
@@ -33,7 +33,7 @@ Q W E R T Y U I O P
 - O: Reorient camera
 - P: Clear motion trails
 
-# mouse
+### mouse
 
 - Click a surface or interior star to make star the fixed "pole" around which the qubits are unitarily rotated.
 - Click a black eigenstar or its antipodal pair to collapse the overall state into one of two eigenspaces.
