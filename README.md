@@ -42,7 +42,7 @@ Q W E R T Y U I O P
 
 To Ettore Majorana, Bernard Riemann, Rodger Penrose, Heinz Hopf, Felix Bloch, Paul Dirac, Werner Heisenberg, Erwin Schrodinger, Niels Bohr, and of course, Einstein.
 
-Say first, of God above, or man below, 
+`Say first, of God above, or man below, 
 What can we reason, but from what we know? 
 Of man what see we, but his station here, 
 From which to reason, or to which refer? 
@@ -61,4 +61,4 @@ Look'd through? or can a part contain the whole?
 
 Is the great chain, that draws all to agree, 
 And drawn supports, upheld by God, or thee? 
--- Epistle on Man, Alexander Pope
+-- Epistle on Man, Alexander Pope`
