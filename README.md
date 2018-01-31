@@ -62,12 +62,3 @@ Look'd through? or can a part contain the whole?
 Is the great chain, that draws all to agree, 
 And drawn supports, upheld by God, or thee? 
 -- Epistle on Man, Alexander Pope
-
-"Divining Arts, and Stars foreknowing Fate,
-Varying the divers Turns of Humane State,
-(The Works of Heav'ns high Reason) We bring down
-In Verse, from Heaven; and first move Helicon,
-And it's Green Groves, with unacquainted Rimes,
-Offering strange Rites, not known to former Times."
--- The Sphere of Marcus Manilius, translated by Edward Sherburne, Esquire
-
