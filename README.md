@@ -31,7 +31,8 @@ Q W E R T Y U I O P
 - K/I: Rotate Green Qubit -/+ Around Pole
 - N/M: Rotate Blue Qubit -/+ Around Pole
 - O: Reorient camera
-- P: Toggle Trail Mode (None; Interior Qubits; Surface Planets; Fixed Stars; Planets and Fixed Stars; Qubits, Planets, and Fixed Stars)
+- P: Toggle Trail Mode 
+    - None; Interior Qubits; Surface Planets; Fixed Stars; Planets and Fixed Stars; Qubits, Planets, and Fixed Stars)
 
 ### mouse
 
