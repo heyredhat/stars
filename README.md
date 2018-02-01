@@ -32,7 +32,12 @@ Q W E R T Y U I O P
 - N/M: Rotate Blue Qubit -/+ Around Pole
 - O: Reorient camera
 - P: Toggle Trail Mode 
-    - None; Interior Qubits; Surface Planets; Fixed Stars; Planets and Fixed Stars; Qubits, Planets, and Fixed Stars
+    - None
+    - Interior Qubits 
+    - Surface Planets (Majorana's "Anti-stars")
+    - Fixed Stars 
+    - Planets and Fixed Stars
+    - Qubits, Planets, and Fixed Stars
 
 ### mouse
 
