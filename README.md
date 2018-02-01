@@ -18,7 +18,7 @@ Q W E R T Y U I O P
 - A/D: Latitude -/+
 - S/W: Longitude -/+
 - Z/X: Delta per step -/+
-- C: Toggle Astronomical Updates On/Off
+- C: Toggle Astronomical Time Updates On/Off
 - E: Toggle Hamiltonian Time Evolution On/Off
 - R: Toggle Hamiltonian Time Evolution Forward/Reverse
 - F: Parabolic Mobius Transform (Type A)
@@ -31,7 +31,7 @@ Q W E R T Y U I O P
 - K/I: Rotate Green Qubit -/+ Around Pole
 - N/M: Rotate Blue Qubit -/+ Around Pole
 - O: Reorient camera
-- P: Clear motion trails
+- P: Toggle Trail Mode (None; Interior Qubits; Surface Planets; Fixed Stars; Planets and Fixed Stars; Qubits, Planets, and Fixed Stars)
 
 ### mouse
 
