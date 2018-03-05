@@ -272,7 +272,6 @@ class Qubit:
         return fiber_points
 
     def evolve(self, operator, inverse=True, dt=0.005):
-        unitary = (-2*math.pi*im()*upgraded*dt).expm()
         if self.parent:
             i = self.parent.qubits.index(self)
             upgraded = None
@@ -293,6 +292,7 @@ class Qubit:
             self.parent.state = unitary*self.parent.state
             self.parent.update()
         else:
+            unitary = (-2*math.pi*im()*operator*dt).expm()
             if inverse:
                 unitary = unitary.dag()
             self.update(unitary*self.state.value*unitary.dag())

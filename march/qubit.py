@@ -95,25 +95,30 @@ def inverse_stereographic_projectionAll(xyz):
 ##################################################################################################################
 
 class Qubit:
-    def __init__(self, state, n_fiber_points=50):
+    def __init__(self, state, field, n_fiber_points=50, emissive=False):
         self.state = state
-        self.n_fiber_points = n_fiber_points
+        self.field = field 
 
+        self.n_fiber_points = n_fiber_points
+        self.emissive = emissive
         self.color = vpython.vector(random.random(), random.random(), random.random())
+
         self.varrow = vpython.arrow(pos=vpython.vector(0,0,0),\
                                     color=self.color,\
-                                    shaftwidth=0.05)
+                                    shaftwidth=0.05,\
+                                    emissive=self.emissive)
         self.vbase = vpython.sphere(color=self.color,\
                                     radius=0.1,\
                                     opacity=0.7,\
-                                    emissive=False)
+                                    emissive=self.emissive)
         self.vfiber = vpython.curve(pos=[vpython.vector(0,0,0) for i in range(self.n_fiber_points)],\
-                                    color=self.color)
+                                    color=self.color,\
+                                    emissive=self.emissive)
 
     def spin_axis(self):
-        return [qutip.expect(qutip.sigmax(), self.state),\
-                qutip.expect(qutip.sigmay(), self.state),\
-                qutip.expect(qutip.sigmaz(), self.state)]
+        return [qutip.expect(qutip.sigmax(), self.state).real,\
+                qutip.expect(qutip.sigmay(), self.state).real,\
+                qutip.expect(qutip.sigmaz(), self.state).real]
 
     def fibration(self):
         vector = qubit_to_vector(self.state)
@@ -132,44 +137,115 @@ class Qubit:
     def visualize(self):
         self.varrow.axis = vpython.vector(*self.spin_axis())
         base, fiber_points = self.fibration()
-        self.vbase.pos = vpython.vector(*base)
-        for i in range(self.n_fiber_points):
-            if not isinstance(fiber_points[i], int):
-                self.vfiber.modify(i, pos=vpython.vector(*fiber_points[i]),\
-                                      color=self.color)
+        if not isinstance(base, int):
+            self.vbase.pos = vpython.vector(*base)
+            for i in range(self.n_fiber_points):
+                if not isinstance(fiber_points[i], int):
+                    self.vfiber.modify(i, pos=vpython.vector(*fiber_points[i]),\
+                                          color=self.color)
 
-    def evolve(self, operator, inverse=True, dt=0.005):
+    def evolve(self, operator, inverse=True, dt=0.0001):
         unitary = (-2*math.pi*im()*operator*dt).expm()
         if inverse:
             unitary = unitary.dag()
-        self.state = unitary*self.state*unitary.dag()
+        self.field.evolve(self, unitary)
 
 ##################################################################################################################
+
+class Field:
+    def __init__(self):
+        self.qubit = Qubit(qutip.rand_ket(2).ptrace(0), self)
+        self.photon = Qubit(qutip.rand_ket(2).ptrace(0), self, emissive=True)
+
+        self.charge = 1
+
+        self.energy = qutip.identity(2)
+
+    def evolve(self, whom, unitary):
+        if whom == self.qubit:
+            old_state = self.qubit.state
+            new_state = unitary*self.qubit.state*unitary.dag()
+
+            old_vector = qubit_to_vector(old_state)
+            new_vector = qubit_to_vector(new_state)
+
+            vector_delta = new_vector-old_vector
+            vector_delta = vector_delta.T[0].tolist()
+
+            def get_phase(state):
+                state_matrix = state.full()
+                alpha, beta = state_matrix[0,1], state_matrix[1,0]
+                alpha_r, alpha_th = cmath.polar(alpha)
+                beta_r, beta_th = cmath.polar(beta)
+                return alpha_th-beta_th
+
+            old_phase = get_phase(old_state)
+            new_phase = get_phase(new_state)
+            phase_delta = old_phase - new_phase
+
+            delta = []
+            for i in range(4):
+                if vector_delta[i] != 0:
+                    delta.append([phase_delta/vector_delta[i]])
+                else:
+                    delta.append([0])
+            delta = (1./self.charge)*np.array(delta)
+
+            self.photon.state = vector_to_qubit(qubit_to_vector(self.photon.state) + delta).unit()
+            self.qubit.state = new_state#*cmath.exp(-1*im()*(new_phase))
+            self.energy = (self.energy-self.charge*self.photon.state)   
+
+    def visualize(self):
+        self.qubit.visualize()
+        self.photon.visualize()
+
+
+##################################################################################################################
+
+vpython.scene.height = 600
+vpython.scene.width = 800
 
 vsphere = vpython.sphere(pos=vpython.vector(0,0,0),\
                          radius=1.0,\
                          color=vpython.color.blue,\
                          opacity=0.3)
 
-qubit = Qubit(qutip.rand_ket(2).ptrace(0))
+field = Field()
 
 def keyboard(event):
-    global qubit
+    global field
     key = event.key
+    qubit = field.qubit
     if key == "a":
-        qubit.evolve(qutip.sigmax(), inverse=True)
+        field.energy = -1*field.energy*qutip.sigmax()
+        #field.energy = field.energy-qutip.sigmax()
+        #qubit.evolve(qutip.sigmax(), inverse=True)
     elif key == "d":
-        qubit.evolve(qutip.sigmax(), inverse=False)
+        field.energy = field.energy*qutip.sigmax()
+        #field.energy = field.energy+qutip.sigmax()
+        #qubit.evolve(qutip.sigmax(), inverse=False)
     elif key == "s":
-        qubit.evolve(qutip.sigmaz(), inverse=True)
+        field.energy = -1*field.energy*qutip.sigmaz()
+        #field.energy = field.energy-qutip.sigmaz()
+        #qubit.evolve(qutip.sigmaz(), inverse=True)
     elif key == "w":
-        qubit.evolve(qutip.sigmaz(), inverse=False)
+        field.energy = field.energy*qutip.sigmaz()
+        #field.energy = field.energy+qutip.sigmaz()
+        #qubit.evolve(qutip.sigmaz(), inverse=False)
     elif key == "z":
-        qubit.evolve(qutip.sigmay(), inverse=True)
+        field.energy = -1*field.energy*qutip.sigmay()
+        #field.energy = field.energy-qutip.sigmay()
+        #qubit.evolve(qutip.sigmay(), inverse=True)
     elif key == "x":
-        qubit.evolve(qutip.sigmay(), inverse=False)
+        field.energy = field.energy*qutip.sigmay()
+        #field.energy = field.energy+qutip.sigmay()
+        #qubit.evolve(qutip.sigmay(), inverse=False)
+    elif key == "p":
+        field.qubit.state = qutip.rand_ket(2).ptrace(0)
+        field.photon.state = qutip.rand_ket(2).ptrace(0)
 vpython.scene.bind('keydown', keyboard)
 
 while True:
     vpython.rate(100)
-    qubit.visualize()
+    field.qubit.evolve(field.energy)
+    field.visualize()

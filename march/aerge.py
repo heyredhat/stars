@@ -7,8 +7,10 @@ import sympy
 import mpmath
 import scipy
 import qutip 
-#import vpython
 import random
+
+def im():
+    return complex(0, 1)
 
 def normalize(v):
     norm = np.linalg.norm(v)
@@ -16,36 +18,17 @@ def normalize(v):
        return v
     return v / norm
 
+##################################################################################################################
+
 def qubit_to_vector(qubit):
-    return np.array([[qutip.expect(qutip.sigmax(), qubit)],\
-                     [qutip.expect(qutip.sigmay(), qubit)],\
-                     [qutip.expect(qutip.sigmaz(), qubit)],\
-                     [qutip.expect(qutip.identity(2), qubit)]])
+    return np.array([[qutip.expect(qutip.sigmax(), qubit).real],\
+                     [qutip.expect(qutip.sigmay(), qubit).real],\
+                     [qutip.expect(qutip.sigmaz(), qubit).real],\
+                     [qutip.expect(qutip.identity(2), qubit).real]])
 
 def vector_to_qubit(vector):
     x, y, z, t = vector.T[0]
     return (1./2)*(x*qutip.sigmax() + y*qutip.sigmay() + z*qutip.sigmaz() + t*qutip.identity(2))
-
-if False:
-    qubit = qutip.rand_herm(2)
-    vector = qubit_to_vector(qubit)
-    qubit2 = vector_to_qubit(vector)
-    print("qubit:\n%s" % qubit)
-    print("vector:\n%s" % vector)
-    print("qubit2:\n%s" % qubit2)
-
-if False:
-    print()
-
-    vector = normalize(np.array([[random.uniform(-1,1)],\
-                             [random.uniform(-1,1)],\
-                             [random.uniform(-1,1)],\
-                             [random.uniform(-1,1)]]))
-    qubit = vector_to_qubit(vector)
-    vector2 = qubit_to_vector(qubit)
-    print("vector:\n%s" % vector)
-    print("qubit:\n%s" % qubit)
-    print("vector2:\n%s" % vector2)
 
 # n dimensions to n-1-sphere
 def vector_to_angles(xyzs):
@@ -97,7 +80,7 @@ def stereographic_projection(xyz):
         return np.array([[coordinate/(1-coordinates[-1])] for coordinate in coordinates[:-1]])
 
 # from hyperplane in n dimensions plus infinity to n-sphere in n+1 dimensions
-def inverse_stereographic_projection(xyz):
+def inverse_stereographic_projectionAll(xyz):
     if isinstance(xyz, int):
         n = xyz
         return np.array([[1]]+[[0]]*(n-1))
@@ -108,27 +91,37 @@ def inverse_stereographic_projection(xyz):
         sphere.append([(2*coordinate)/(s + 1)])
     return np.array(sphere[::-1])
 
-if True:
-    print()
+##################################################################################################################
 
-    n = 3
-    angles = [random.uniform(0, math.pi) for i in range(n-1)]+[random.uniform(0, 2*math.pi)]
-    xyz = angles_to_vector(angles)
-    angles2 = vector_to_angles(xyz)
+def evolve(qubit, photon, unitary, gauge_charge):
+    old_state = qubit
+    new_state = unitary*qubit*unitary.dag()
 
-    print("angles:\n%s" % angles)
-    print("xyz:\n%s" % xyz)
-    print("angles2:\n%s" % str(angles2))
+    old_vector = qubit_to_vector(old_state)
+    new_vector = qubit_to_vector(new_state)
 
-if True:
-    print()
+    old_angles, r0 = vector_to_angles(old_vector)
+    new_angles, r1 = vector_to_angles(new_vector)
+    angle_delta = new_angles[0]-old_angles[0]
 
-    n = 3
-    angles = [random.uniform(0, math.pi) for i in range(n-1)]+[random.uniform(0, 2*math.pi)]
-    xyz = angles_to_vector(angles)
-    plane = stereographic_projection(xyz)
-    xyz2 = inverse_stereographic_projection(plane)
+    vector_delta = new_vector-old_vector
+    vector_delta = vector_delta.T[0].tolist()
 
-    print("xyz:\n%s" % xyz)
-    print("plane:\n%s" % plane)
-    print("xyz2:\n%s" % xyz2)
+    gauge_delta = []
+    for i in range(4):
+        if vector_delta[i] != 0:
+            delta.append([angle_delta/vector_delta[i]])
+        else:
+            delta.append([0])
+    gauge_delta = np.array(delta)
+
+    return (new_state*cmath.exp(-im()*angle_delta),\
+            vector_to_qubit(normalize(qubit_to_vector(photon) + (1./gauge_charge)*gauge_delta)))
+
+qubit = qutip.rand_ket(2).ptrace(0)
+photon = qutip.rand_ket(2).ptrace(0)
+
+unitary = (-2*math.pi*im()*qutip.rand_herm(2)*0.001).expm()
+
+qubit1, qubit2 = evolve(qubit, photon, unitary, 2)
+
