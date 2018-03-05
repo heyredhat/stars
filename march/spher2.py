@@ -116,10 +116,59 @@ def inverse_stereographic_projectionAll(xyz):
 
 ##################################################################################################################
 
-class Qubit:
-    def __init__(self, color, radius=0.1, n_fiber_points=50, parent=None):
-        self.color = color
+class Sphere:
+    def __init__(self, n_qubits, center=vpython.vector(0,0,0), radius=1.0, color=vpython.color.blue):
+        self.n_qubits = n_qubits
+        self.center = center
         self.radius = radius
+        self.color = color
+
+        self.state = qutip.rand_ket(2**self.n_qubits)
+        self.energy = qutip.rand_herm(2**self.n_qubits)
+
+
+        self.vsphere = vpython.sphere(pos=self.center,\
+                                      radius=self.radius,\
+                                      color=self.color,\
+                                      opacity=0.3)
+
+        qubit_colors = [vpython.vector(random.random(), random.random(), random.random())\
+                            for i in range(self.n_qubits)]
+        self.qubits = [Qubit(color=qubit_colors[i], parent=self) for i in range(self.n_qubits)]
+        self.update()
+
+    def update(self):
+        self.state.dims = [[2]*self.n_qubits, [1]*self.n_qubits]
+        for i in range(self.n_qubits):
+            self.qubits[i].state.plug(self.state.ptrace(i))
+
+    def visualize(self):
+        self.vsphere.pos = self.center
+        self.vsphere.radius = self.radius
+        self.vsphere.color = self.color
+        for i in range(self.n_qubits):
+            self.qubits[i].visualize()
+
+    def evolve(self, operator=None, inverse=True, dt=0.006):
+        if operator == None:
+            operator = self.energy
+        unitary = (-2*math.pi*im()*operator*dt).expm()
+        if inverse:
+            unitary = unitary.dag()
+        self.state.dims = [[2**self.n_qubits],[1]]
+        self.state = unitary*self.state
+        self.update()
+
+    def destroy(self):
+        self.vsphere.visible = False
+        for qubit in self.qubits:
+            qubit.destroy()
+
+##################################################################################################################
+
+class Qubit:
+    def __init__(self, color=vpython.color.white, n_fiber_points=50, parent=None):
+        self.color = color
         self.n_fiber_points = n_fiber_points
         self.parent = parent
 
@@ -133,9 +182,9 @@ class Qubit:
         self.angles.tie(self.vector, angles_to_vector)
 
         self.vbase = vpython.sphere(color=self.color,\
-                                    radius=self.radius,\
-                                    emissive=True,\
-                                    opacity=0.7)
+                                    radius=0.1*self.parent.radius,\
+                                    opacity=0.7,\
+                                    emissive=True)
         self.varrow = vpython.arrow(pos=vpython.vector(0,0,0),\
                                     color=self.color,\
                                     shaftwidth = 0.06)
@@ -145,12 +194,12 @@ class Qubit:
     def visualize(self):
         vpython.rate(100)
         x, y, z = [c.real for c in self.base().T[0].tolist()]
-        self.vbase.pos = vpython.vector(x, y, z)
-        self.varrow.axis = vpython.vector(x, y, z)
+        self.vbase.pos = vpython.vector(x, y, z) + self.parent.center
+        self.varrow.axis = vpython.vector(x, y, z) + self.parent.center
         fiber_points = self.fiber()
         for i in range(self.n_fiber_points):
             if not isinstance(fiber_points[i], int):
-                self.vfiber.modify(i, pos=vpython.vector(*fiber_points[i]))
+                self.vfiber.modify(i, pos=vpython.vector(*fiber_points[i]) + self.parent.center)
 
     def base(self):
         return self.vector.value[:-1]
@@ -170,87 +219,95 @@ class Qubit:
         unitary = (-2*math.pi*im()*operator*dt).expm()
         if inverse:
             unitary = unitary.dag()
-        self.state.plug(unitary*self.state.value*unitary.dag())
+        if self.parent:
+            i = self.parent.qubits.index(self)
+            upgraded = None
+            if i == 0:
+                upgraded = unitary
+            else:
+                upgraded = qutip.identity(2)
+            for j in range(1, self.parent.n_qubits):
+                if j == i:
+                    upgraded = qutip.tensor(upgraded, unitary)
+                else:
+                    upgraded = qutip.tensor(upgraded, qutip.identity(2))
+            self.parent.state.dims = [[2**self.parent.n_qubits],[1]]
+            upgraded.dims = [[2**self.parent.n_qubits],[2**self.parent.n_qubits]]
+            self.parent.state = upgraded*self.parent.state
+            self.parent.update()
+        else:
+            
+            if inverse:
+                unitary = unitary.dag()
+            self.state.plug(unitary*self.state.value*unitary.dag())
+
+    def destroy(self):
+        self.vbase.visible = False
+        self.varrow.visible = False
+        self.vfiber.visible = False
 
 ##################################################################################################################
 
+n_qubits = 1
+sphere = Sphere(n_qubits)
 
-def apply_upgraded(state, i, n, operator, inverse=True, dt=0.006):
-    unitary = (-2*math.pi*im()*operator*dt).expm()
-    if inverse:
-        unitary = unitary.dag()
-    upgraded = None
-    if i == 0:
-        upgraded = unitary
-    else:
-        upgraded = qutip.identity(2)
-    for j in range(1, n):
-        if j == i:
-            upgraded = qutip.tensor(upgraded, unitary)
-        else:
-            upgraded = qutip.tensor(upgraded, qutip.identity(2))
-    state.dims = [[2**n],[1]]
-    upgraded.dims = [[2**n],[2**n]]
-    return upgraded*state
+##################################################################################################################
 
-n_qubits = 6
-
-qubit_colors = [vpython.vector(random.random(), random.random(), random.random()) for i in range(n_qubits)]
-qubits = [Qubit(qubit_colors[i]) for i in range(n_qubits)]
-
-state = qutip.rand_ket(2**n_qubits)
-state.dims = [[2]*n_qubits, [1]*n_qubits]
-for i in range(n_qubits):
-    qubits[i].state.plug(state.ptrace(i))
-
-energy = qutip.rand_herm(2**n_qubits)
-evolution_on = False
+vpython.scene.height = 600
+vpython.scene.width = 800
 
 active_qubit = 0
+evolution_on = False
 def keyboard(event):
-    global state
+    global sphere
+    global n_qubits
     global active_qubit
     global evolution_on
-    global energy
     key = event.key
     if key.isdigit():
         i = int(key)
-        if i < n_qubits:
+        if i < sphere.n_qubits:
             active_qubit = i
     elif key == "a":
-        state = apply_upgraded(state, active_qubit, n_qubits, qutip.sigmax(), inverse=True)
+        sphere.qubits[active_qubit].evolve(qutip.sigmax(), inverse=True)
     elif key == "d":
-        state = apply_upgraded(state, active_qubit, n_qubits, qutip.sigmax(), inverse=False)
+        sphere.qubits[active_qubit].evolve(qutip.sigmax(), inverse=False)
     elif key == "s":
-        state = apply_upgraded(state, active_qubit, n_qubits, qutip.sigmaz(), inverse=True)
+        sphere.qubits[active_qubit].evolve(qutip.sigmaz(), inverse=True)
     elif key == "w":
-        state = apply_upgraded(state, active_qubit, n_qubits, qutip.sigmaz(), inverse=False)
+        sphere.qubits[active_qubit].evolve(qutip.sigmaz(), inverse=False)
     elif key == "z":
-        state = apply_upgraded(state, active_qubit, n_qubits, qutip.sigmay(), inverse=True)
+        sphere.qubits[active_qubit].evolve(qutip.sigmay(), inverse=True)
     elif key == "x":
-        state = apply_upgraded(state, active_qubit, n_qubits, qutip.sigmay(), inverse=False)
-    elif key == "p":
+        sphere.qubits[active_qubit].evolve(qutip.sigmay(), inverse=False)
+    elif key == "i":
         if evolution_on:
             evolution_on = False
         else:
             evolution_on = True
     elif key == "o":
-        energy = qutip.rand_herm(2**n_qubits)
-    elif key == "i":
-        state = qutip.rand_ket(2**n_qubits)
+        sphere.state = qutip.rand_ket(2**sphere.n_qubits)
+        sphere.update()
+    elif key == "p":
+        sphere.energy = qutip.rand_herm(2**sphere.n_qubits)
+        sphere.update()
+    elif key == "+":
+        evolution_on = False
+        sphere.destroy()
+        n_qubits += 1
+        sphere = Sphere(n_qubits)
+        active_qubit = 0
+    elif key == "-":
+        evolution_on = False
+        sphere.destroy()
+        n_qubits -= 1
+        sphere = Sphere(n_qubits)
+        active_qubit = 0
 vpython.scene.bind('keydown', keyboard)
 
-vsphere = vpython.sphere(pos=vpython.vector(0,0,0),\
-                         radius=1.0,\
-                         color=vpython.color.blue,\
-                         opacity=0.3)
+##################################################################################################################
 
 while True:
     if evolution_on:
-        state.dims = [[2**n_qubits],[1]]
-        state = (-2*math.pi*im()*energy*0.007).expm()*state
-    for i in range(n_qubits):
-        old_dims = state.dims[:]
-        state.dims = [[2]*n_qubits, [1]*n_qubits]
-        qubits[i].state.plug(state.ptrace(i))
-        qubits[i].visualize()
+        sphere.evolve()
+    sphere.visualize()
