@@ -47,10 +47,10 @@ class Variable:
 ##################################################################################################################
 
 def qubit_to_vector(qubit):
-    return normalize(np.array([[qutip.expect(qutip.sigmax(), qubit)],\
-                      [qutip.expect(qutip.sigmay(), qubit)],\
-                      [qutip.expect(qutip.sigmaz(), qubit)],\
-                      [qutip.expect(qutip.identity(2), qubit)]]))
+    return np.array([[qutip.expect(qutip.sigmax(), qubit)],\
+                     [qutip.expect(qutip.sigmay(), qubit)],\
+                     [qutip.expect(qutip.sigmaz(), qubit)],\
+                     [qutip.expect(qutip.identity(2), qubit)]])
 
 def vector_to_qubit(vector):
     x, y, z, t = vector.T[0]
@@ -203,7 +203,7 @@ class Qubit:
                                     emissive=False)
         self.varrow = vpython.arrow(pos=vpython.vector(0,0,0),\
                                     color=self.color,\
-                                    shaftwidth = 0.06)
+                                    shaftwidth=0.03)
         self.vfiber = vpython.curve(pos=[vpython.vector(0,0,0) for i in range(self.n_fiber_points)],\
                                     color=self.color)
         if self.gauged:
@@ -214,12 +214,13 @@ class Qubit:
             self.gauge_field.vbase.emissive = True
             self.gauge_field.vfiber.emissive=True
             self.gauge_field.state.plug(qutip.rand_herm(2))
+            self.varrow.shaftwidth = 0.06
 
     def update(self, new_state):
         if self.gauged and self.angles.value != None:
             old_angles, r0 = self.angles.value
             new_angles, r1 = vector_to_angles(qubit_to_vector(new_state))
-            angle_delta = new_angles[0]-old_angles[0]
+            angle_delta = 2*(new_angles[0]-old_angles[0])
 
             old_vector = self.vector.value
             new_vector = qubit_to_vector(new_state)
@@ -234,11 +235,15 @@ class Qubit:
                     delta.append([0])
             delta = np.array(delta)
             self.gauge_field.vector.plug(normalize(self.gauge_field.vector.value + (1./self.gauge_charge)*delta))
-            self.state.plug(new_state*cmath.exp(-im()*angle_delta))
+            #self.state.plug(new_state*cmath.exp(-im()*angle_delta))
+            self.state.plug(new_state)
         else:
             self.state.plug(new_state)
 
     def visualize(self):
+        base = self.base()
+        if isinstance(base, int):
+            return
         base_x, base_y, base_z = [c.real for c in self.base().T[0].tolist()]
         self.vbase.pos = vpython.vector(base_x, base_y, base_z)
         arrow_x, arrow_y, arrow_z = [c.real for c in self.spin_axis()]
@@ -263,10 +268,11 @@ class Qubit:
                                        [math.sin(angle), math.cos(angle),0,0],\
                                        [0,0,math.cos(angle),-1*math.sin(angle)],\
                                        [0,0,math.sin(angle),math.cos(angle)]])
-            fiber_points.append(np.real(stereographic_projection(np.dot(transformation, self.vector.value))))
+            fiber_points.append(np.real(stereographic_projection(normalize(np.dot(transformation, self.vector.value)))))
         return fiber_points
 
     def evolve(self, operator, inverse=True, dt=0.005):
+        unitary = (-2*math.pi*im()*upgraded*dt).expm()
         if self.parent:
             i = self.parent.qubits.index(self)
             upgraded = None
