@@ -47,10 +47,10 @@ class Variable:
 ##################################################################################################################
 
 def qubit_to_vector(qubit):
-    return np.array([[qutip.expect(qutip.sigmax(), qubit)],\
+    return normalize(np.array([[qutip.expect(qutip.sigmax(), qubit)],\
                       [qutip.expect(qutip.sigmay(), qubit)],\
                       [qutip.expect(qutip.sigmaz(), qubit)],\
-                      [qutip.expect(qutip.identity(2), qubit)]])
+                      [qutip.expect(qutip.identity(2), qubit)]]))
 
 def vector_to_qubit(vector):
     x, y, z, t = vector.T[0]
@@ -58,15 +58,18 @@ def vector_to_qubit(vector):
 
 # n dimensions to n-1-sphere
 def vector_to_angles(xyzs):
-    coordinates = xyzs.T[0].tolist()[::-1]
+    coordinates = [c.real for c in xyzs.T[0].tolist()[::-1]]
     n = len(coordinates)-1
-    r = math.sqrt(sum([x**2 for x in xyzs]))
+    r = math.sqrt(sum([x**2 for x in coordinates]))
     angles = []
     for i in range(n):
         if i != n-1:
             angle = coordinates[i]
             divisor = math.sqrt(sum([coordinates[j]**2 for j in range(i,n+1)]))
-            angles.append(math.acos(angle/divisor))
+            if divisor == 0:
+                angles.append(0)
+            else: 
+                angles.append(math.acos(angle/divisor))
         else:
             angle = None
             if math.sqrt(coordinates[-1]**2 + coordinates[-2]**2) != 0:
@@ -149,7 +152,7 @@ class Sphere:
         for i in range(self.n_qubits):
             self.qubits[i].visualize()
 
-    def evolve(self, operator=None, inverse=True, dt=0.006):
+    def evolve(self, operator=None, inverse=True, dt=0.005):
         if operator == None:
             operator = self.energy
         unitary = (-2*math.pi*im()*operator*dt).expm()
@@ -164,10 +167,22 @@ class Sphere:
         for qubit in self.qubits:
             qubit.destroy()
 
+    def spin_axis(self):
+        n = 2**self.n_qubits
+        spin = (n-1.)/2.
+        X, Y, Z = qutip.jmat(spin)
+        state_copy = self.state.copy()
+        state_copy.dims = [[2**self.n_qubits],[1]]
+        spin_axis = [qutip.expect(X, state_copy),\
+                     qutip.expect(Y, state_copy),\
+                     qutip.expect(Z, state_copy)]
+        return spin_axis
+
+
 ##################################################################################################################
 
 class Qubit:
-    def __init__(self, color=vpython.color.white, n_fiber_points=50, parent=None, gauged=False):
+    def __init__(self, color=vpython.color.white, n_fiber_points=100, parent=None, gauged=False):
         self.color = color
         self.n_fiber_points = n_fiber_points
         self.parent = parent
@@ -191,13 +206,13 @@ class Qubit:
                                     shaftwidth = 0.06)
         self.vfiber = vpython.curve(pos=[vpython.vector(0,0,0) for i in range(self.n_fiber_points)],\
                                     color=self.color)
-
         if self.gauged:
-            self.gauge_charge = 30
+            self.gauge_charge = 1
             self.gauge_field = Qubit(color=self.color,\
                                      n_fiber_points=self.n_fiber_points,\
                                      gauged=False)
             self.gauge_field.vbase.emissive = True
+            self.gauge_field.vfiber.emissive=True
             self.gauge_field.state.plug(qutip.rand_herm(2))
 
     def update(self, new_state):
@@ -219,22 +234,26 @@ class Qubit:
                     delta.append([0])
             delta = np.array(delta)
             self.gauge_field.vector.plug(normalize(self.gauge_field.vector.value + (1./self.gauge_charge)*delta))
-        self.state.plug(new_state)
+            self.state.plug(new_state*cmath.exp(-im()*angle_delta))
+        else:
+            self.state.plug(new_state)
 
     def visualize(self):
-        vpython.rate(100)
-        x, y, z = [c.real for c in self.base().T[0].tolist()]
-        self.vbase.pos = vpython.vector(x, y, z) 
-        self.varrow.axis = vpython.vector(x, y, z)
+        base_x, base_y, base_z = [c.real for c in self.base().T[0].tolist()]
+        self.vbase.pos = vpython.vector(base_x, base_y, base_z)
+        arrow_x, arrow_y, arrow_z = [c.real for c in self.spin_axis()]
+        self.varrow.axis = vpython.vector(arrow_x, arrow_y, arrow_z)
         fiber_points = self.fiber()
         for i in range(self.n_fiber_points):
             if not isinstance(fiber_points[i], int):
-                self.vfiber.modify(i, pos=vpython.vector(*fiber_points[i]))
+                    self.vfiber.modify(i, pos=vpython.vector(*fiber_points[i]),\
+                                          color=self.color)
         if self.gauged:
             self.gauge_field.visualize()
+            self.gauge_field.vfiber.visible = False
 
     def base(self):
-        return self.vector.value[:-1]
+        return stereographic_projection(normalize(self.vector.value))
 
     def fiber(self):
         circle = np.linspace(0, 2*math.pi, num=self.n_fiber_points)
@@ -244,28 +263,28 @@ class Qubit:
                                        [math.sin(angle), math.cos(angle),0,0],\
                                        [0,0,math.cos(angle),-1*math.sin(angle)],\
                                        [0,0,math.sin(angle),math.cos(angle)]])
-            fiber_points.append(stereographic_projection(normalize(np.dot(transformation, self.vector.value))))
+            fiber_points.append(np.real(stereographic_projection(np.dot(transformation, self.vector.value))))
         return fiber_points
 
-    def evolve(self, operator, inverse=True, dt=0.006):
-        unitary = (-2*math.pi*im()*operator*dt).expm()
-        if inverse:
-            unitary = unitary.dag()
+    def evolve(self, operator, inverse=True, dt=0.005):
         if self.parent:
             i = self.parent.qubits.index(self)
             upgraded = None
             if i == 0:
-                upgraded = unitary
+                upgraded = operator
             else:
                 upgraded = qutip.identity(2)
             for j in range(1, self.parent.n_qubits):
                 if j == i:
-                    upgraded = qutip.tensor(upgraded, unitary)
+                    upgraded = qutip.tensor(upgraded, operator)
                 else:
                     upgraded = qutip.tensor(upgraded, qutip.identity(2))
+            unitary = (-2*math.pi*im()*upgraded*dt).expm()
+            if inverse:
+                unitary = unitary.dag()
             self.parent.state.dims = [[2**self.parent.n_qubits],[1]]
-            upgraded.dims = [[2**self.parent.n_qubits],[2**self.parent.n_qubits]]
-            self.parent.state = upgraded*self.parent.state
+            unitary.dims = [[2**self.parent.n_qubits],[2**self.parent.n_qubits]]
+            self.parent.state = unitary*self.parent.state
             self.parent.update()
         else:
             if inverse:
@@ -278,6 +297,11 @@ class Qubit:
         self.vfiber.visible = False
         if self.gauged:
             self.gauge_field.destroy()
+
+    def spin_axis(self):
+        return [qutip.expect(qutip.sigmax(), self.state.value),\
+                qutip.expect(qutip.sigmay(), self.state.value),\
+                qutip.expect(qutip.sigmaz(), self.state.value)]
 
 ##################################################################################################################
 
@@ -341,6 +365,8 @@ vpython.scene.bind('keydown', keyboard)
 ##################################################################################################################
 
 while True:
+    vpython.rate(100)
     if evolution_on:
         sphere.evolve()
     sphere.visualize()
+    #vpython.scene.forward = 2*vpython.vector(*sphere.spin_axis())
