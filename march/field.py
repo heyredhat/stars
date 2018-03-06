@@ -308,7 +308,7 @@ class Field:
                                           center=vpython.vector(self.n_qubits/2.,1.5,0),\
                                           color=vpython.color.green)
         choice_colors = [random_color() for i in range(self.n)]
-        self.choices = [[Qubit(center=vpython.vector(i, 3, 0),\
+        self.choices = [[Qubit(center=vpython.vector(i-(self.n/2), 3, 0),\
                                color=choice_colors[i],\
                                star_color=qubit_colors[j]) 
                                        for j in range(self.n_qubits)] 
@@ -341,7 +341,7 @@ class Field:
 
 ##################################################################################################################
 
-field = Field(2)
+field = Field(3)
 
 ##################################################################################################################
 
@@ -353,7 +353,7 @@ def mouse(event):
     for i in range(field.n):
         for j in range(field.n_qubits):
             if field.choices[i][j].vsphere == pick:
-                return i
+                to_collapse = i
 vpython.scene.bind('click', mouse)
 
 ##################################################################################################################
@@ -392,6 +392,7 @@ vpython.scene.width = 800
 while True:
     vpython.rate(100)
     if to_collapse != -1:
-        field.collapse(i)
+        field.collapse(to_collapse)
         to_collapse = -1
     field.visualize()
+    vpython.scene.camera.follow(field.symmetrical.vsphere)
