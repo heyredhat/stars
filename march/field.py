@@ -10,6 +10,7 @@ import qutip
 import vpython
 import random
 import itertools
+import threading
 
 def im():
     return complex(0, 1)
@@ -246,9 +247,10 @@ class MajoranaSphere:
                                       emissive=True) for i in range(self.n-1)]
 
     def spin_axis(self):
+        #print(self.state)
         spin = (self.n-1.)/2.
         X, Y, Z = qutip.jmat(spin)
-        self.state.dims = [[self.n], [self.n]]
+        self.state.dims = [[self.n], [1]]
         spin_axis = [qutip.expect(X, self.state),\
                      qutip.expect(Y, self.state),\
                      qutip.expect(Z, self.state)]
@@ -262,10 +264,8 @@ class MajoranaSphere:
         self.varrow.pos = self.center
         self.varrow.axis = vpython.vector(*spin_axis)*self.radius
         self.varrow.color = self.color
-        self.state.dims = [[self.n],[self.n]]
-        eigenvalues, eigenvectors = self.state.eigenstates()
-        star_star = sum([eigenvalues[i]*eigenvectors[i] for i in range(self.n)])
-        stars_xyz = q_SurfaceXYZ(star_star)
+        self.state.dims = [[self.n],[1]]
+        stars_xyz = q_SurfaceXYZ(self.state)
         for i in range(self.n-1):
             self.vstars[i].pos = vpython.vector(*stars_xyz[i])*self.radius + self.center
             self.vstars[i].color = self.star_color
@@ -300,28 +300,46 @@ class Field:
         self.n_qubits = n_qubits
         self.n = 2**self.n_qubits
 
+        self.state = qutip.rand_ket(self.n)
+        self.state_sphere = MajoranaSphere(self.n, self.state,\
+                                          center=vpython.vector(self.n_qubits/2.,-1.5,0),\
+                                          color=vpython.color.green)
+        self.state.dims = [[2]*self.n_qubits, [1]*self.n_qubits]
+        self.qubit_states = [self.state.ptrace(i) for i in range(self.n_qubits)]
         qubit_colors = [random_color() for i in range(self.n_qubits)]
-        self.qubits = [Qubit(center=vpython.vector(2*i, 0, 0 ),\
+        self.qubits = [Qubit(state=self.qubit_states[i],\
+                             center=vpython.vector(2*i, 0, 0 ),\
                              color=qubit_colors[i]) for i in range(self.n_qubits)]
-        self.field_state = symmeterize([qubit.state for qubit in self.qubits])
-        self.symmetrical = MajoranaSphere(self.n-1, self.field_state,\
+        self.field_state = symmeterize([state for state in self.qubit_states])
+        self.field_state.dims = [[self.n],[self.n]]
+        eigenvalues, eigenvectors = self.field_state.eigenstates()
+        star_star = sum([eigenvalues[i]*eigenvectors[i] for i in range(self.n)])
+        self.symmetrical = MajoranaSphere(self.n, star_star,\
                                           center=vpython.vector(self.n_qubits/2.,1.5,0),\
                                           color=vpython.color.green)
         choice_colors = [random_color() for i in range(self.n)]
-        self.choices = [[Qubit(center=vpython.vector(i-(self.n/2), 3, 0),\
+        self.choices = [[Qubit(center=vpython.vector(i-(self.n_qubits/2), 3, 0),\
                                color=choice_colors[i],\
                                star_color=qubit_colors[j]) 
                                        for j in range(self.n_qubits)] 
                                            for i in range(self.n)]
 
     def visualize(self):
-        for qubit in self.qubits:
-            qubit.visualize()
-        self.field_state = symmeterize([qubit.state for qubit in self.qubits])
-        self.symmetrical.state = self.field_state
-        self.symmetrical.visualize()
+        self.state.dims = [[self.n],[1]]
+        self.state_sphere.state = self.state
+        self.state_sphere.visualize()
+        state_copy = self.state.copy()
+        state_copy.dims = [[2]*self.n_qubits, [1]*self.n_qubits]
+        self.qubit_states = [state_copy.ptrace(i) for i in range(self.n_qubits)]
+        for i in range(self.n_qubits):
+            self.qubits[i].state = self.qubit_states[i]
+            self.qubits[i].visualize()
+        self.field_state = symmeterize([state for state in self.qubit_states])
         self.field_state.dims = [[self.n],[self.n]]
         eigenvalues, eigenvectors = self.field_state.eigenstates()
+        star_star = sum([eigenvalues[i]*eigenvectors[i] for i in range(self.n)])
+        self.symmetrical.state = star_star
+        self.symmetrical.visualize()
         neigenvalues = normalize(eigenvalues)
         for i in range(self.n):
             eigenvectors[i].dims = [[2]*self.n_qubits, [1]*self.n_qubits]
@@ -332,12 +350,27 @@ class Field:
                 self.choices[i][j].radius = neigenvalues[i]**2
                 self.choices[i][j].visualize()
 
+    def evolve(self, qubit_selected, operator, inverse=False, dt=0.01):
+        unitary = (-2*math.pi*im()*operator*dt).expm()
+        if inverse:
+            unitary = unitary.dag()
+        upgraded = None
+        if qubit_selected == 0:
+            upgraded = unitary
+        else:
+            upgraded = qutip.identity(2)
+        for j in range(1, self.n_qubits):
+            if j == qubit_selected:
+                upgraded = qutip.tensor(upgraded, unitary)
+            else:
+                upgraded = qutip.tensor(upgraded, qutip.identity(2))
+        self.state.dims = [[2**self.n_qubits],[1]]
+        upgraded.dims = [[2**self.n_qubits],[2**self.n_qubits]]
+        self.state = upgraded*self.state
+
     def collapse(self, i):
         eigenvalues, eigenvectors = self.field_state.eigenstates()
-        collapsed_state = eigenvectors[i]
-        collapsed_state.dims = [[2]*self.n_qubits, [1]*self.n_qubits]
-        for i in range(self.n_qubits):
-            self.qubits[i].state = collapsed_state.ptrace(i)
+        self.state = eigenvectors[i]
 
 ##################################################################################################################
 
@@ -359,35 +392,50 @@ vpython.scene.bind('click', mouse)
 ##################################################################################################################
 
 qubit_selected = 0
+evolution = True
 def keyboard(event):
     global field
     global qubit_selected
+    global evolution
     key = event.key
     if key.isdigit():
         i = int(key)
         if i < field.n_qubits:
             qubit_selected = i
     if key == "a":
-        field.qubits[qubit_selected].evolve(qutip.sigmax(), inverse=True)
+        field.evolve(qubit_selected, qutip.sigmax(), inverse=True)
     elif key == "d":
-        field.qubits[qubit_selected].evolve(qutip.sigmax(), inverse=False)
+        field.evolve(qubit_selected, qutip.sigmax(), inverse=False)
     elif key == "s":
-        field.qubits[qubit_selected].evolve(qutip.sigmaz(), inverse=True)
+        field.evolve(qubit_selected, qutip.sigmaz(), inverse=True)
     elif key == "w":
-        field.qubits[qubit_selected].evolve(qutip.sigmaz(), inverse=False)
+        field.evolve(qubit_selected, qutip.sigmaz(), inverse=False)
     elif key == "z":
-        field.qubits[qubit_selected].evolve(qutip.sigmay(), inverse=True)
+        field.evolve(qubit_selected, qutip.sigmay(), inverse=True)
     elif key == "x":
-        field.qubits[qubit_selected].evolve(qutip.sigmay(), inverse=False)
+        field.evolve(qubit_selected, qutip.sigmay(), inverse=False)
     elif key == "p":
         for i in range(field.n_qubits):
-            field.qubits[i].state = qutip.rand_herm(2)
+            field.state = qutip.rand_ket(field.n)
+    elif key == "t":
+        if evolution:
+            evolution = False
+        else:
+            evolution = True
 vpython.scene.bind('keydown', keyboard)
 
 ##################################################################################################################
 
-vpython.scene.height = 600
-vpython.scene.width = 800
+vpython.scene.height = 800
+vpython.scene.width = 1400
+
+def cmd_line():
+    while True:
+        s = input("?: ")
+        print(s)
+thread = threading.Thread(target = cmd_line)
+thread.start()
+
 
 while True:
     vpython.rate(100)
@@ -396,3 +444,9 @@ while True:
         to_collapse = -1
     field.visualize()
     vpython.scene.camera.follow(field.symmetrical.vsphere)
+    if evolution:
+        op_cop = field.field_state.copy()
+        op_cop.dims = [[field.n], [field.n]]
+        unitary = (-2*math.pi*im()*op_cop*0.01).expm()
+        field.state = unitary*field.state
+
