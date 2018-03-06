@@ -181,6 +181,7 @@ class Qubit:
                 qutip.expect(qutip.sigmaz(), self.state)]
 
     def visualize(self):
+        self.vsphere.pos = self.center
         self.vsphere.radius = self.radius
         self.vbase.radius = 0.1*self.radius
         spin_axis = self.spin_axis()
@@ -188,11 +189,11 @@ class Qubit:
         self.varrow.axis = vpython.vector(*spin_axis)*self.radius
         self.vbase.pos = vpython.vector(*spin_axis)*self.radius+self.center
 
-    def evolve(self, operator, inverse=False, dt=0.005):
+    def evolve(self, operator, inverse=False, dt=0.01):
         unitary = (-2*math.pi*im()*operator*dt).expm()
         if inverse:
             unitary = unitary.dag()
-        self.state = unitary*self.state
+        self.state = unitary*self.state*unitary.dag()
 
 ##################################################################################################################
 
@@ -213,31 +214,35 @@ class MajoranaSphere:
                                     emissive=True)
         self.vstars = [vpython.sphere(radius=0.1, emissive=True) for i in range(self.n-1)]
 
-        self.a_choices = [Qubit(center=self.center+vpython.vector(-3,1.5,0), star_color=vpython.color.yellow),\
-                          Qubit(center=self.center+vpython.vector(-1,1.5,0), star_color=vpython.color.yellow),\
-                          Qubit(center=self.center+vpython.vector(1,1.5,0), star_color=vpython.color.yellow),\
-                          Qubit(center=self.center+vpython.vector(3,1.5,0), star_color=vpython.color.yellow)]
-        self.b_choices = [Qubit(center=self.center+vpython.vector(-3,1.5,0), star_color=vpython.color.orange),\
-                          Qubit(center=self.center+vpython.vector(-1,1.5,0), star_color=vpython.color.orange),\
-                          Qubit(center=self.center+vpython.vector(1,1.5,0), star_color=vpython.color.orange),\
-                          Qubit(center=self.center+vpython.vector(3,1.5,0), star_color=vpython.color.orange)]
+        self.a_choices = [Qubit(color=vpython.color.cyan, center=self.center+vpython.vector(-3,1.5,0), star_color=vpython.color.yellow),\
+                          Qubit(color=vpython.color.cyan,center=self.center+vpython.vector(-1,1.5,0), star_color=vpython.color.yellow),\
+                          Qubit(color=vpython.color.cyan,center=self.center+vpython.vector(1,1.5,0), star_color=vpython.color.yellow),\
+                          Qubit(color=vpython.color.cyan,center=self.center+vpython.vector(3,1.5,0), star_color=vpython.color.yellow)]
+        self.b_choices = [Qubit(color=vpython.color.magenta,center=self.center+vpython.vector(-3,1.5,0), star_color=vpython.color.orange),\
+                          Qubit(color=vpython.color.magenta,center=self.center+vpython.vector(-1,1.5,0), star_color=vpython.color.orange),\
+                          Qubit(color=vpython.color.magenta,center=self.center+vpython.vector(1,1.5,0), star_color=vpython.color.orange),\
+                          Qubit(color=vpython.color.magenta,center=self.center+vpython.vector(3,1.5,0), star_color=vpython.color.orange)]
 
     def refract(self):
-        self.state.dims = [[4],[1]]
-        eigenvalues, eigenvectors = self.state.ptrace(0).eigenstates()
+        self.state.dims = [[self.n],[self.n]]
+        eigenvalues, eigenvectors = self.state.eigenstates()
+        neigenvalues = normalize(eigenvalues)
         for i in range(self.n):
             eigenvectors[i].dims = [[2,2], [1,1]]
             a = eigenvectors[i].ptrace(0)
             b = eigenvectors[i].ptrace(1)
             self.a_choices[i].state = a
-            self.a_choices[i].radius = eigenvalues[i]
+            self.a_choices[i].center.z = eigenvalues[i]
+            yy = 1
+            self.a_choices[i].radius = yy*neigenvalues[i]**2
             self.b_choices[i].state = b
-            self.b_choices[i].radius = eigenvalues[i]
+            self.b_choices[i].center.z = eigenvalues[i]
+            self.b_choices[i].radius = yy*neigenvalues[i]**2
 
     def spin_axis(self):
         spin = (self.n-1.)/2.
         X, Y, Z = qutip.jmat(spin)
-        self.state.dims = [[self.n], [1]]
+        self.state.dims = [[self.n], [self.n]]
         spin_axis = [qutip.expect(X, self.state),\
                      qutip.expect(Y, self.state),\
                      qutip.expect(Z, self.state)]
@@ -247,7 +252,12 @@ class MajoranaSphere:
         spin_axis = self.spin_axis()
         self.varrow.pos = self.center
         self.varrow.axis = vpython.vector(*spin_axis)
-        stars_xyz = q_SurfaceXYZ(self.state)
+
+        self.state.dims = [[self.n],[self.n]]
+        eigenvalues, eigenvectors = self.state.eigenstates()
+        star_star = sum([eigenvalues[i]*eigenvectors[i] for i in range(self.n)])
+
+        stars_xyz = q_SurfaceXYZ(star_star)
         for i in range(self.n-1):
             self.vstars[i].pos = vpython.vector(*stars_xyz[i])+self.center
         for choice in self.a_choices:
@@ -255,11 +265,18 @@ class MajoranaSphere:
         for choice in self.b_choices:
             choice.visualize()
 
+    def collapse(self, i):
+        eigenvalues, eigenvectors = self.state.eigenstates()
+        collapsed_state = eigenvectors[i]
+        collapsed_state.dims = [[2,2], [1,1]]
+        return collapsed_state.ptrace(0), collapsed_state.ptrace(1)
+
+
 ##################################################################################################################
 
 n_qubits = 2
-qubits = [Qubit(state=qutip.rand_ket(2), center=vpython.vector(-1,0,0), color=vpython.color.blue),\
-          Qubit(state=qutip.rand_ket(2), center=vpython.vector(1,0,0), color=vpython.color.red)]
+qubits = [Qubit(state=qutip.rand_herm(2), center=vpython.vector(-1,0,0), color=vpython.color.blue),\
+          Qubit(state=qutip.rand_herm(2), center=vpython.vector(1,0,0), color=vpython.color.red)]
 
 def symmeterize(a, b):
     return 0.5*(qutip.tensor(a,b) + qutip.tensor(b,a))
@@ -271,7 +288,17 @@ god = MajoranaSphere(4, symmeterize(alice.state, bob.state), vpython.vector(0,1.
 
 vpython.scene.height = 600
 vpython.scene.width = 800
-vpython.scene.camera.forward = vpython.vector(0,1.5,0)
+
+collapsing = -1
+def mouse(event):
+    global god
+    global collapsing
+    pick = vpython.scene.mouse.pick
+    for i in range(4):
+        if pick == god.a_choices[i].vsphere or pick == god.b_choices[i].vsphere:
+            collapsing = i
+
+vpython.scene.bind('click', mouse)
 
 qubit_selected = 0
 def keyboard(event):
@@ -296,6 +323,9 @@ def keyboard(event):
         qubits[qubit_selected].evolve(qutip.sigmay(), inverse=True)
     elif key == "x":
         qubits[qubit_selected].evolve(qutip.sigmay(), inverse=False)
+    elif key == "p":
+        qubits[0].state = qutip.rand_herm(2)
+        qubits[1].state = qutip.rand_herm(2)
 vpython.scene.bind('keydown', keyboard)
 
 while True:
@@ -306,3 +336,8 @@ while True:
     god.visualize()
     for qubit in qubits:
         qubit.visualize()
+    if collapsing != -1:
+        a, b = god.collapse(collapsing)
+        collapsing = -1
+        qubits[0].state = a
+        qubits[1].state = b
