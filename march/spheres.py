@@ -65,7 +65,7 @@ def polynomial_C(polynomial):
     try:
         roots = [np.conjugate(complex(root)) for root in mpmath.polyroots(polynomial)]
     except:
-        return [complex(0,0) for i in range(len(polynomial)-1)]
+    	return [float('Inf') for i in range(len(polynomial)-1)]
     return roots
 
 def C_v(roots):
@@ -149,7 +149,7 @@ class MajoranaSphere:
         self.text.pos = vp.vector(*spin_axis)*self.radius + self.center
         self.state.dims = [[self.n],[1]]
         stars_xyz = q_SurfaceXYZ(self.state)
-        for i in range(self.n-1):
+        for i in range(len(stars_xyz)):
             self.vstars[i].pos = vp.vector(*stars_xyz[i])*self.radius + self.center
             self.vstars[i].color = self.star_color
 
@@ -205,12 +205,28 @@ class Soul:
 		for i in range(len(self.vocabulary)):
 			 self.symbol_basis[self.vocabulary[i]] = qt.tensor(qt.Qobj(self.left_basis[i]), qt.Qobj(self.right_basis[i]))*self.diag[i]**2
 		
+
+		d = len(self.vocabulary)**2	
+		sentence = [] 
+		for i in range(len(question)):
+			basis_copy = self.symbol_basis[question[i]].copy()
+			basis_copy.dims = [[d],[1]]
+			basis_vector = self.symbol_basis[question[i]].full().T[0]
+			sentence.append(basis_vector)
+		sentence = np.array(sentence).T
+		sentence_conj = np.conjugate(sentence.T)
+		sentence_space = []
+		for i in range(len(question)):
+			row = []
+			for j in range(len(question)):
+				row.append(np.inner(sentence[:,i], sentence_conj[j,:]))
+			sentence_space.append(row)
+		sentence_space = np.array(sentence_space)
 		answer_spheres = []
 		answer_colors = [vp.vector(*np.random.rand(3)) for i in range(len(question))]
 		for i in range(len(question)):
-			answer_vector = self.symbol_basis[question[i]].copy()
-			d = len(self.vocabulary)**2
-			answer_vector.dims = [[d],[1]]
+			answer_vector = qt.Qobj(sentence_space[i])
+			answer_vector.dims = [[len(question)],[1]]
 			answer_sphere = MajoranaSphere(d, answer_vector,\
 								color=answer_colors[i],\
 								star_color=answer_colors[i],
