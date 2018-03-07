@@ -146,7 +146,8 @@ class MajoranaSphere:
                           radius=1,\
                           color=vp.color.blue,\
                           star_color=vp.color.white,
-                          tag=None):
+                          tag=None,\
+                          show_stars=True):
         self.n = n
         if state == None:
             self.state = qutip.rand_ket(n)
@@ -162,6 +163,7 @@ class MajoranaSphere:
             self.color = color
         self.star_color = star_color
         self.tag = tag
+        self.show_stars = show_stars
 
         self.vsphere = vp.sphere(pos=self.center,\
                                  radius=self.radius,\
@@ -176,7 +178,8 @@ class MajoranaSphere:
                                    align='center',\
                                    color=self.color,\
                                    height=0.2)
-        self.vstars = [vp.sphere(radius=0.1*self.radius,\
+        if self.show_stars:
+            self.vstars = [vp.sphere(radius=0.1*self.radius,\
                                  opacity=0.5,\
                                  emissive=True) for i in range(self.n-1)]
 
@@ -201,10 +204,11 @@ class MajoranaSphere:
         if self.tag:
             self.text.pos = vp.vector(*spin_axis)*self.radius + self.center
         self.state.dims = [[self.n],[1]]
-        stars_xyz = q_SurfaceXYZ(self.state)
-        for i in range(len(stars_xyz)):
-            self.vstars[i].pos = vp.vector(*stars_xyz[i])*self.radius + self.center
-            self.vstars[i].color = self.star_color
+        if self.show_stars:
+            stars_xyz = q_SurfaceXYZ(self.state)
+            for i in range(len(stars_xyz)):
+                self.vstars[i].pos = vp.vector(*stars_xyz[i])*self.radius + self.center
+                self.vstars[i].color = self.star_color
 
     def apply(self, operator, inverse=False, dt=0.01):
         unitary = (-2*math.pi*im()*dt*operator).expm()
@@ -224,7 +228,7 @@ class MajoranaSphere:
     def decide(self):
         key = get_key()
         spin_ops = self.spin_operators()
-        while key != "q" and key != "e":
+        while key != "q" and key != "x":
             if key == "a":
                 self.apply(spin_ops['X'], inverse=True)
             elif key == "d":
@@ -235,7 +239,7 @@ class MajoranaSphere:
                 self.apply(spin_ops['Z'], inverse=False)
             elif key == "z":
                 self.apply(spin_ops['Y'], inverse=True)
-            elif key == "x":    
+            elif key == "e":    
                 self.apply(spin_ops['Y'], inverse=False)
             self.visualize()
             key = get_key()
@@ -249,8 +253,9 @@ class MajoranaSphere:
         self.varrow.visible = False
         if self.tag:
             self.text.visible = False
-        for vstar in self.vstars:
-            vstar.visible = False
+        if self.show_stars:
+            for vstar in self.vstars:
+                vstar.visible = False
 
 ##################################################################################################################
 
@@ -269,6 +274,7 @@ class Soul:
         self.symbol_basis = {}
 
         self.questions = []
+        self.unordered = []
 
     def __str__(self):
         rep = crayons.red("**************************************************************\n")
@@ -289,8 +295,15 @@ class Soul:
             for e in answer.full().T[0].tolist():
                 rep += '[{0.real:.2f}+{0.imag:.2f}i] '.format(e)
             rep += '\n'
+        rep += crayons.magenta("  orderings:\n")
+        for e in self.unordered:
+            rep += "\t.%s\n" % (self.combo_question_string(e))
         rep += crayons.blue("**************************************************************")
         return rep
+
+    def add_question(self, question):
+        self.questions.append(question)
+        self.unordered.append(len(self.questions)-1)
 
     def ask(self, question):
         self.expand_vocabulary(question)
@@ -298,11 +311,11 @@ class Soul:
         sentence_space = self.construct_sentence_space(question)
         the_answer = self.v_pose(question, sentence_space)
         if the_answer:
-            self.questions.append([question, the_answer])
+            self.add_question([question, the_answer])
         else:
             the_answer = self.cmd_pose(question, sentence_space)
             if the_answer:
-                self.questions.append([question, the_answer])
+                self.add_question([question, the_answer])
 
     def expand_vocabulary(self, question):
         for i in range(len(question)):
@@ -352,6 +365,17 @@ class Soul:
         return np.array(sentence_space)
 
     def v_pose(self, question, sentence_space, initial_state=None):
+        print(crayons.red(    "\t               +Z             "))
+        print(crayons.green(  "\t               w       +Y     "))
+        print(crayons.blue(   "\t      q quit   |     e        "))
+        print(crayons.yellow( "\t               |   /          "))
+        print(crayons.magenta("\t               | /            "))
+        print(crayons.cyan(   "\t -X a  ________*________ d +X "))
+        print(crayons.magenta("\t             / |              "))
+        print(crayons.yellow( "\t           /   |              "))
+        print(crayons.blue(   "\t        -Y     |     x save   "))
+        print(crayons.green(  "\t      z        s              "))
+        print(crayons.red(    "\t              -Z              "))
         answer_spheres = []
         answer_colors = [vp.vector(*np.random.rand(3)) for i in range(len(question))]
         for i in range(len(question)):
@@ -407,7 +431,80 @@ class Soul:
             the_answer = self.cmd_pose(question, sentence_space)
             if the_answer:
                 self.questions[question_index] = [question, the_answer]
-            
+
+    def vocab_sphere(self, show_stars=True):
+        print(crayons.magenta("q to quit..."))
+        if len(self.vocabulary) > 0:
+            colors = [vp.vector(random.random(),\
+                                random.random(),\
+                                random.random()) for v in self.vocabulary]
+            spheres = [MajoranaSphere(len(self.vocabulary)**2,\
+                                      state=self.symbol_basis[self.vocabulary[i]],\
+                                      color=colors[i],\
+                                      star_color=colors[i],\
+                                      tag=self.vocabulary[i],\
+                                      show_stars=show_stars)\
+                                         for i in range(len(self.vocabulary))]
+            for sphere in spheres:
+                sphere.visualize()
+            key = get_key()
+            while key != "q":
+                key = get_key()
+
+    def order(self):
+        if len(self.unordered) == 1:
+            print("already ordered!")
+        else:
+            done = False
+            while not done:
+                if len(self.unordered) == 1:
+                    done = True
+                    print("all tidied up!")
+                else:
+                    a, b = random.sample(self.unordered,2)
+                    ordering = self.cmd_assign_ordering(a, b)
+                    if ordering == "p":
+                        done = True
+                    elif ordering != "q":
+                        self.unordered.append([a, b, ordering])
+                        self.unordered.remove(a)
+                        self.unordered.remove(b)
+
+    def combo_question_string(self, q):
+        s = ""
+        if isinstance(q, int):
+            s += ("%s" % (self.questions[q][0]))
+        else:
+            a, b, kind = q
+            s += "(%s,%s:%s)" % (self.combo_question_string(a), self.combo_question_string(b), kind)
+        return s
+
+    def cmd_assign_ordering(self, a, b):
+        print(crayons.red(self.combo_question_string(a)))  
+        print("\t.VS.")  
+        print(crayons.blue(self.combo_question_string(b)))
+        print(crayons.red(    "\t                coexists               "))
+        print(crayons.green(  "\t                   w       covers      "))
+        print(crayons.blue(   "\t      q            |     e             "))
+        print(crayons.yellow( "\t       defer...    |   /               "))
+        print(crayons.magenta("\t                   | /                 "))
+        print(crayons.cyan(   "\t before a  _______SUM_______ d after   "))
+        print(crayons.magenta("\t                /  x                   "))
+        print(crayons.yellow( "\t        is    /    |     p             "))
+        print(crayons.blue(   "\t   covered  z      |      to quit...   "))
+        print(crayons.green(  "\t        by         s                   "))
+        print(crayons.red(    "\t               excludes                "))
+        ordering = input(crayons.green('.')+crayons.magenta('.')+crayons.blue('.'))
+        while ordering not in ["a", "d", "s", "w", "z", "e", "q", "x", "p"]:
+            ordering = input(crayons.green('.')+crayons.magenta('.')+crayons.blue('.'))
+        return ordering
+
+    def question_to_probabilities(self, question_index):
+        question, answer = self.questions[question_index]
+
+    def implement_ordering(self):
+        pass
+
     def __getstate__(self):
         stuff = self.__dict__
         stuff['vsphere'].visible = False
@@ -473,6 +570,8 @@ def cmd_loop():
                 print("\tclear questions")
                 print("\task *soul* *question-#*")
                 print("\trepose *soul* *soul-question-#*")
+                print("\tvocab *soul*")
+                print("\torder *soul*")
             elif cmds[0] == "save" and n == 2:
                 filename = cmds[1]
                 try:
@@ -514,6 +613,25 @@ def cmd_loop():
                         print(souls[soul_index])
                 else:
                     print("which?")
+            elif cmds[0] == "vocab":
+                if n == 2:
+                    soul_index = soul_index_for_name(cmds[1])
+                    if soul_index != -1:
+                        if len(souls[soul_index].vocabulary) == 0:
+                            print("%s has no words!" % cmds[1])
+                        elif len(souls[soul_index].vocabulary)**2 > 32:
+                            souls[soul_index].vocab_sphere(show_stars=False)
+                        else:
+                            souls[soul_index].vocab_sphere(show_stars=True)
+                    else:
+                        print("no soul named %s!" % cmds[1])
+            elif cmds[0] == "order":
+                if n == 2:
+                    soul_index = soul_index_for_name(cmds[1])
+                    if soul_index != -1:
+                       souls[soul_index].order()
+                    else:
+                        print("no soul named %s!" % cmds[1])
             elif cmds[0] == "create":
                 if n == 2 and cmds[1] == "question":
                     answers = []
