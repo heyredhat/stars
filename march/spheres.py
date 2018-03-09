@@ -106,6 +106,19 @@ def antisymmeterize(pieces):
 def direct_sum(pieces):
     return qt.Qobj(normalize(np.concatenate([piece.full().T[0] for piece in pieces])))
 
+def spin_axis(state):
+    n = state.shape[0]
+    spin = (n-1.)/2.
+    if state.isket:
+        state.dims = [[n], [1]]
+    else:
+        state.dims = [[n],[n]]
+    spin_axis = np.array([[qt.expect(qt.jmat(spin,"x"), state)],\
+                          [qt.expect(qt.jmat(spin,"y"), state)],\
+                          [qt.expect(qt.jmat(spin,"z"), state)],\
+                          [qt.expect(qt.identity(n), state)]])
+    return normalize(spin_axis[:-1])
+
 ##################################################################################################################
 
 class Soul:
@@ -196,7 +209,7 @@ class Soul:
             return self.unorder(self.ordering[0])
 
     def unorder(self, ordering):
-        how, questions = ordering
+        how, questions, dims = ordering
         QUESTIONS = [None]*len(questions)
         STATE = None
         for i in range(len(questions)):
@@ -279,10 +292,10 @@ def display_error(message=None):
 def display_question(soul, question):
     s = ""
     if isinstance(question, int):
-        s += ("%s:%s" % (question, soul.questions[question][0]))
+        s += "%s:%s|%d" % (question, soul.questions[question][0], len(soul.questions[question][0]))
     else:
-        how, questions = question
-        s += "(%s:%s)" % (how, ",".join([display_question(soul, q) for q in questions]))
+        how, questions, dims = question
+        s += "(%s:%s|%s)" % (how, ",".join([display_question(soul, q) for q in questions]), str(dims))
     return s
 
 ##################################################################################################################
@@ -521,6 +534,85 @@ class MajoranaSphere:
 
 ##################################################################################################################
 
+class MajoranaDensitySphere:
+    def __init__(self, state,\
+                 center=None,\
+                 radius=1,\
+                 sphere_color=None,\
+                 star_color=None,\
+                 arrow_color=None,\
+                 show_sphere=True,\
+                 show_stars=True,\
+                 show_arrow=True,\
+                 show_tag=False,\
+                 show_tag_on_stars=False,\
+                 tag="e"):
+        self.n = state.shape[0]
+        self.state = state
+        self.center = center if center else vp.vector(0,0,0)
+        self.radius = radius
+        self.sphere_color = sphere_color if sphere_color != None else vp.color.blue
+        self.star_color = star_color if star_color != None else vp.color.white
+        self.arrow_color = self.sphere_color if arrow_color == None else arrow_color
+        self.show_sphere = show_sphere
+        self.show_stars = show_stars
+        self.show_arrow = show_arrow
+        self.show_tag = show_tag
+        self.show_tag_on_stars = show_tag_on_stars
+        self.tag = tag
+
+        self.eigenvalues, self.eigenvectors = self.state.eigenstates()
+        self.normalized_eigenvalues = normalize(self.eigenvalues)
+        self.vspheres = [MajoranaSphere(self.eigenvectors[i],\
+                                        center=self.center,\
+                                        radius=self.radius*self.normalized_eigenvalues[i],\
+                                        sphere_color=self.sphere_color,\
+                                        star_color=self.star_color,\
+                                        show_stars=self.show_stars,\
+                                        show_arrow=self.show_arrow,\
+                                        show_tag=self.show_tag,\
+                                        show_tag_on_stars=self.show_tag_on_stars,\
+                                        tag=self.tag)\
+                            for i in range(len(self.eigenvectors))]
+
+    def display_visuals(self):
+        for vsphere in self.vspheres:
+            vsphere.display_visuals()
+
+    def spin_operators(self):
+        spin = (self.n-1.)/2.
+        return {"X": qutip.jmat(spin, "x"),\
+                "Y": qutip.jmat(spin, "y"),\
+                "Z": qutip.jmat(spin, "z"),\
+                "+": qutip.jmat(spin, "+"),\
+                "-": qutip.jmat(spin, "-")}
+
+    def spin_axis(self):
+        spin_ops = self.spin_operators()
+        self.state.dims = [[self.n], [self.n]]
+        spin_axis = np.array([[qt.expect(spin_ops["X"], self.state)],\
+                              [qt.expect(spin_ops["Y"], self.state)],\
+                              [qt.expect(spin_ops["Z"], self.state)],\
+                              [qt.expect(qt.identity(self.n), self.state)]])
+        return normalize(spin_axis[:-1])
+
+    def evolve(self, operator, inverse=False, dt=0.01):
+        unitary = (-2*math.pi*im()*dt*operator).expm()
+        if inverse:
+            unitary = unitary.dag()
+        self.state.dims = [[self.n],[self.n]]
+        self.state = unitary*self.state*unitary.dag()
+
+    def invisible(self):
+        for vsphere in self.vspheres:
+            vsphere.invisible()
+
+    def visible(self):
+        for vsphere in self.vspheres:
+            vsphere.visible()
+
+##################################################################################################################
+
 class MajoranaDecisionSphere:
     def __init__(self, question, question_space, initial_answer=None):
         self.question = question
@@ -686,10 +778,37 @@ class OrderingSphere:
                 if how == "quit":
                     self.done = True
                 elif how != "defer":
-                    ordering.append([how, questions])
+                    dims = self.recurse(questions, how)
+                    ordering.append([how, questions, dims])
                     for question in questions:
                         ordering.remove(question)
         return ordering
+
+    def recurse(self, questions, how):
+        dims = None
+        if how in ["before", "after"]:
+            dims = 0
+        elif how in ["covers", "is_covered_by", "coexists", "excludes"]:
+            dims = 1
+        elif how == "sum":
+            dims = None
+        for question in questions:
+            if isinstance(question, int):
+                if how in ["before", "after"]:
+                    dims += len(self.soul.questions[question][0])
+                elif how in ["covers", "is_covered_by", "coexists", "excludes"]:
+                    dims *= len(self.soul.questions[question][0])
+                elif how == "sum":
+                    dims = len(self.soul.questions[question][0])
+            else:
+                lower_how, lower_questions, lower_dims = question
+                if how in ["before", "after"]:
+                    dims += self.recurse(lower_questions, lower_how)
+                elif how in ["covers", "is_covered_by", "coexists", "excludes"]:
+                    dims *= self.recurse(lower_questions, lower_how)
+                else:
+                    dims = self.recurse(lower_questions, lower_how)
+        return dims
 
     def display_assign_ordering(self, questions):
         for i in range(len(questions)):
@@ -711,6 +830,101 @@ class OrderingSphere:
         while ordering not in self.commands.keys():
             ordering = display_inner_prompt()
         return self.commands[ordering]
+
+##################################################################################################################
+
+class StateSphere:
+    def __init__(self, soul):
+        self.soul = soul
+        self.state = self.soul.state.copy()
+        self.ordering = self.soul.ordering[0]
+
+        self.done = False
+
+    def keyboard(self, event):
+        key = event.key
+        if key == "q":
+            self.done = True
+
+    def display(self):
+        self.vspheres = self.create_recursive(True, self.state, self.ordering, vp.vector(0,0,0), 1)
+        vp.scene.bind('keydown', self.keyboard)
+        print(crayons.magenta("q to quit...")) 
+        while not self.done:                   
+            self.display_recursively(self.vspheres)
+        self.destroy_recursively(self.vspheres)
+        vp.scene.unbind('keydown', self.keyboard)
+
+    def display_recursively(self, vspheres):
+        background, foreground = vspheres
+        background.display_visuals()
+        for fore in foreground:
+            if isinstance(fore, list):
+                self.display_recursively(fore)
+            else:
+                fore.display_visuals()
+
+    def destroy_recursively(self, vspheres):
+        background, foreground = vspheres
+        background.visible = False
+        for fore in foreground:
+            if isinstance(fore, list):
+                self.destroy_recursively(fore)
+            else:
+                fore.visible = False
+                del fore
+
+    def create_recursive(self, start, state, ordering, center, radius):
+        state = state.copy()
+        background_sphere = None
+        new_center = center
+        new_radius = radius
+        if not start:
+            background_center = vp.vector(*spin_axis(state))
+            new_center = center + background_center
+            new_radius = 0.3*radius
+        if state.isket:
+            color = vp.vector(*np.random.rand(3))
+            background_sphere = MajoranaSphere(state,\
+                                           sphere_color=color,\
+                                           star_color=color,\
+                                           show_stars=True,\
+                                           center=new_center,\
+                                           radius=new_radius)
+        else:
+            color = vp.vector(*np.random.rand(3))
+            background_sphere = MajoranaDensitySphere(state, sphere_color=color, star_color=color, center=new_center, radius=new_radius, show_stars=True)
+    
+        if isinstance(ordering, int):
+            return [background_sphere, []]
+        else:
+            how, questions, dims = ordering
+            new_dims = []
+            for question in questions:
+                question_dims = None
+                if isinstance(question, int):
+                    new_dims.append(len(self.soul.questions[question][0]))
+                else:
+                    inner_how, inner_questions, inner_dims = question
+                    new_dims.append(inner_dims)
+            foreground_spheres = []
+            if how in ["before", "after"]:
+                for i in range(len(questions)):
+                    if i == 0:
+                        foreground_spheres.append(self.create_recursive(False, qt.Qobj(state.full().T[0][0:new_dims[0]]), questions[i], new_center, new_radius))
+                    else:
+                        foreground_spheres.append(self.create_recursive(False, qt.Qobj(state.full().T[0][new_dims[i-1]:new_dims[i]]), questions[i], new_center, new_radius))
+            elif how in ["excludes", "coexists", "is_covered_by", "covers"]:
+                if state.isket:
+                    state.dims = [new_dims, [1]*len(new_dims)]
+                else:
+                    state.dims = [new_dims, new_dims]
+                for i in range(len(new_dims)):
+                    foreground_spheres.append(self.create_recursive(False, state.ptrace(i), questions[i], new_center, new_radius))
+            elif how == "sum":
+                for i in range(len(questions)):
+                    foreground_spheres.append(self.create_recursive(False, state/len(questions), questions[i], new_center, new_radius))
+            return [background_sphere, foreground_spheres]
 
 ##################################################################################################################
 
@@ -840,6 +1054,9 @@ def soul___(soul_name):
         rep += str(soul.state) + "\n"
         rep += crayons.blue("**************************************************************")
         print(rep)
+        if soul.state != None:
+            state_sphere = StateSphere(soul)
+            state_sphere.display()
 
 def ask___(soul_name, question_index):
     """ask *name* *question-#*"""
