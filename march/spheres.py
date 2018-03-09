@@ -6,12 +6,14 @@
 
 import os
 import sys
+import time
 import math
 import qutip
 import cmath
 import sympy
 import scipy
 import mpmath
+import pyglet
 import pickle
 import random
 import crayons
@@ -23,7 +25,6 @@ import functools
 import qutip as qt
 import numpy as np
 import vpython as vp
-import time
 
 ##################################################################################################################
 
@@ -37,7 +38,6 @@ def normalize(v):
     return v / norm
 
 def powerset(iterable):
-    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
     s = list(iterable)
     return itertools.chain.from_iterable(itertools.combinations(s, r) for r in range(len(s)+1))
 
@@ -56,9 +56,9 @@ def relations(iterable):
     return rel
 
 def symmeterize(pieces, labels=None):
-    if labels == None:
-        labels = list(range(len(pieces)))
     n = len(pieces)
+    if labels == None:
+        labels = list(range(n))
     unique_labels = list(set(labels))
     label_counts = [0 for i in range(len(unique_labels))]
     label_permutations = itertools.permutations(labels, n)
@@ -66,16 +66,18 @@ def symmeterize(pieces, labels=None):
         for i in range(len(unique_labels)):
             label_counts[i] += list(permutation).count(unique_labels[i])
     normalization = 1./math.sqrt(functools.reduce(operator.mul, [math.factorial(count) for count in label_counts], 1)/math.factorial(n))    
-    #normalization = 1./math.sqrt(math.factorial(n))
-    permutations = itertools.permutations(pieces, n)
-    tensor_sum = sum([qutip.tensor(list(permutation)) for permutation in permutations])
+    permutations = list(itertools.permutations(pieces, n))
+    perm_states = []
+    for permutation in permutations:
+        perm_state = permutation[0]
+        for state in permutation[1:]:
+            perm_state = qt.tensor(perm_state, state)
+        perm_state.dims = [[perm_state.shape[0]],[1]]
+        perm_states.append(perm_state)
+    tensor_sum = sum(perm_states)
     return normalization*tensor_sum
 
 def perm_parity(lst):
-    '''\
-    Given a permutation of the digits 0..N in order as a list, 
-    returns its parity (or sign): +1 for even parity; -1 for odd.
-    '''
     parity = 1
     for i in range(0,len(lst)-1):
         if lst[i] != i:
@@ -87,12 +89,22 @@ def perm_parity(lst):
 def antisymmeterize(pieces):
     n = len(pieces)
     normalization = 1./math.sqrt(math.factorial(n))
-    permutations = itertools.permutations(pieces, n)
-    tensor_sum = sum([qutip.tensor(perm_parity(permutation)*list(permutation)) for permutation in permutations])
+    permutations = list(itertools.permutations(pieces, n))
+    int_permutations = list(itertools.permutations(list(range(n)), n))
+    perm_states = []
+    for i in range(len(permutations)):
+        permutation = permutations[i]
+        perm_state = permutation[0]
+        for state in permutation[1:]:
+            perm_state = qt.tensor(perm_state, state)
+        perm_state = perm_state*perm_parity(list(int_permutations[i]))
+        perm_state.dims = [[perm_state.shape[0]],[1]]
+        perm_states.append(perm_state)
+    tensor_sum = sum(perm_states)
     return normalization*tensor_sum
 
-def direct_sum(a, b):
-    return qt.Qobj(scipy.linalg.block_diag(a.full(),b.full()))
+def direct_sum(pieces):
+    return qt.Qobj(normalize(np.concatenate([piece.full().T[0] for piece in pieces])))
 
 ##################################################################################################################
 
@@ -181,37 +193,32 @@ class Soul:
 
     def construct_state(self):
         if len(self.ordering) == 1:
-            self.state = self.unorder(self.ordering[0])
+            return self.unorder(self.ordering[0])
 
     def unorder(self, ordering):
-
-        #######
-                a, b, kind = ordering
-        A, B = None, None
-        C = None
-        if isinstance(a, int):
-            A = self.questions[a][1]
-        else:
-            A = self.unorder(a)
-        if isinstance(b, int):
-            B = self.questions[b][1]
-        else:
-            B = self.unorder(b)
-        if kind == "a": # before
-            C = direct_sum(A, B) #?
-        elif kind == "d": # after
-            C = direct_sum(B, A) #?
-        elif kind == "s": # excludes
-            C = antisymmeterize([A, B]) #?
-        elif kind == "w": # coexists
-            C = symmeterize([A, B]) #? CRAP YOU HAVE TO BE ABLE TO SYMMETERIZE MORE THAN ONE
-        elif kind == "z": # is covered by
-            C = qt.tensor(B, A)
-        elif kind == "e": # covers
-            C = qt.tensor(A, B)
-        elif kind == "x": # sum
-            C = A+B 
-        return C
+        how, questions = ordering
+        QUESTIONS = [None]*len(questions)
+        STATE = None
+        for i in range(len(questions)):
+            if isinstance(questions[i], int):
+                QUESTIONS[i] = self.questions[i][1]
+            else:
+                QUESTIONS[i] = self.unorder(questions[i])
+        if how == "before":
+            STATE = direct_sum(QUESTIONS)
+        elif how == "after":
+            STATE = direct_sum(QUESTIONS[::-1])
+        elif how == "excludes":
+            STATE = antisymmeterize(QUESTIONS)
+        elif how == "coexists":
+            STATE = symmeterize(QUESTIONS)
+        elif how == "covers":
+            STATE = qt.tensor(QUESTIONS)
+        elif how == "is_covered_by":
+            STATE = qt.tensor(QUESTIONS[::-1])
+        elif how == "sum":
+            STATE = sum(QUESTIONS)
+        return STATE
 
 ##################################################################################################################
 
@@ -265,17 +272,17 @@ def display_inner_prompt():
 
 def display_error(message=None):
     if message:
-        print(crayons.red("?: %s" % message))
+        print(crayons.red("?:")+crayons.blue(" %s" % message))
     else:
         print(crayons.red("?"))
 
 def display_question(soul, question):
     s = ""
     if isinstance(question, int):
-        s += ("%s" % (soul.questions[question][0]))
+        s += ("%s:%s" % (question, soul.questions[question][0]))
     else:
-        how, a, b = question
-        s += "(%s:%s,%s)" % (how, display_question(a), display_question(b))
+        how, questions = question
+        s += "(%s:%s)" % (how, ",".join([display_question(soul, q) for q in questions]))
     return s
 
 ##################################################################################################################
@@ -301,7 +308,7 @@ def does_question_exist(question_index):
         display_error(message="use question #!")
         return False
 
-def does_question_exist_for_soul(soul_name, soul_question_index):
+def does_question_index_exist_for_soul(soul_name, soul_question_index):
     global spheres
     if does_soul_exist(soul_name):
         if soul_question_index.isdigit():
@@ -314,6 +321,16 @@ def does_question_exist_for_soul(soul_name, soul_question_index):
         else:
             display_error(message="use question # for %s!" % (soul_name))
             return False
+
+def does_question_exist_for_soul(soul_name, question_answers):
+    global spheres
+    if does_soul_exist(soul_name):
+        soul = spheres.souls[soul_name]
+        for question in soul.questions:
+            answers, answer = question
+            if answers == question_answers:
+                return True
+        return False
 
 ##################################################################################################################
 
@@ -664,21 +681,21 @@ class OrderingSphere:
                 print("all tidied up!")
                 self.done = True
             else:
-                questions = random.choice(relations(self.soul.ordering))
-                ordering = self.display_assign_ordering(questions)
-                if ordering == "quit":
+                questions = random.choice(relations(ordering))
+                how = self.display_assign_ordering(questions)
+                if how == "quit":
                     self.done = True
-                elif ordering != "defer":
-                    ordering.append([ordering, questions])
+                elif how != "defer":
+                    ordering.append([how, questions])
                     for question in questions:
                         ordering.remove(question)
         return ordering
 
     def display_assign_ordering(self, questions):
         for i in range(len(questions)):
-            print(display_question(questions[i]))
+            print(display_question(self.soul, questions[i]))
             if i < len(questions)-1:
-                print("\t."+crayon.red("V")+crayon.blue("S")+".")
+                print("\t."+crayons.red("V")+crayons.blue("S")+".")
         print(crayons.red(    "\t                coexists               "))
         print(crayons.green(  "\t                   w       covers      "))
         print(crayons.blue(   "\t      q            |     x             "))
@@ -691,14 +708,9 @@ class OrderingSphere:
         print(crayons.green(  "\t        by         s                   "))
         print(crayons.red(    "\t               excludes                "))
         ordering = display_inner_prompt()
-        while ordering not in self.commands.keys() or ordering == "c":
-            if ordering == "c":
-                # if all questions of same dimensionality
-                break
-            else:
-                display_error(message="wrong dimensionality!")
+        while ordering not in self.commands.keys():
             ordering = display_inner_prompt()
-        return ordering
+        return self.commands[ordering]
 
 ##################################################################################################################
 
@@ -815,13 +827,17 @@ def soul___(soul_name):
             question, answer = soul.questions[i]
             rep += crayons.red("    %d.'%s'\n    " % (i, ", ".join(question)))
             for e in answer.full().T[0].tolist():
-                rep += '[{0.real:.2f}+{0.imag:.2f}i] '.format(e)    
-            rep += "\t"+crayon.green(soul.question_to_probabilities(i))+"%!\n"
+                rep += '[{0.real:.2f}+{0.imag:.2f}i] '.format(e) 
+            rep += "\n"
+            probabilities = soul.question_to_probabilities(i)
+            for probability in probabilities:
+                answer, prob = probability
+                rep += crayons.green("\t\t.%s:" % answer)+crayons.blue(" %.3f%%\n" % prob)
         rep += crayons.magenta("  orderings:\n")
-        for question in self.ordering:
-            rep += "\t.%s\n" % (display_question(question))
+        for question in soul.ordering:
+            rep += "\t.%s\n" % (display_question(soul, question))
         rep += crayons.yellow("  state:\n")
-        rep += str(self.state) + "\n"
+        rep += str(soul.state) + "\n"
         rep += crayons.blue("**************************************************************")
         print(rep)
 
@@ -843,7 +859,7 @@ def repose___(soul_name, soul_question_index):
     """repose *name* *soul-question-#*"""
     global spheres
     if does_soul_exist(soul_name):
-        if does_question_exist_for_soul(soul_name, soul_question_index):
+        if does_question_index_exist_for_soul(soul_name, soul_question_index):
             soul_question_index = int(soul_question_index)
             soul = spheres.souls[soul_name]
             question, answer = soul.questions[soul_question_index]
@@ -864,10 +880,10 @@ def vocab___(soul_name):
             vocab_sphere = VocabularySphere(soul)
             vocab_sphere.display()
 
-def order__(soul_name):
-    """order *name"""
+def order___(soul_name):
+    """order *name*"""
     if does_soul_exist(soul_name):
-        soul = sphere.souls[soul_name]
+        soul = spheres.souls[soul_name]
         if len(soul.ordering) != 1:
             ordering_sphere = OrderingSphere(soul)
             soul.ordering = ordering_sphere.order()
@@ -895,6 +911,16 @@ def cmd_loop():
                     display_error(message=action.__doc__)
             else:
                 display_error()
+
+##################################################################################################################
+
+song = pyglet.media.load("sphurs.mp3")
+looper = pyglet.media.SourceGroup(song.audio_format, None)
+looper.loop = True
+looper.queue(song)
+player = pyglet.media.Player()
+player.queue(looper)
+player.play()
 
 ##################################################################################################################
 
