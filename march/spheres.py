@@ -37,6 +37,14 @@ def normalize(v):
        return v
     return v / norm
 
+def str_to_bool(s):
+    if s == "True" or s == "true":
+        return True
+    elif s == "False" or s == "false":
+        return False
+    else:
+        return None
+
 def powerset(iterable):
     s = list(iterable)
     return itertools.chain.from_iterable(itertools.combinations(s, r) for r in range(len(s)+1))
@@ -106,6 +114,8 @@ def antisymmeterize(pieces):
 def direct_sum(pieces):
     return qt.Qobj(normalize(np.concatenate([piece.full().T[0] for piece in pieces])))
 
+##################################################################################################################
+
 def spin_axis(state):
     n = state.shape[0]
     spin = (n-1.)/2.
@@ -118,6 +128,104 @@ def spin_axis(state):
                           [qt.expect(qt.jmat(spin,"z"), state)],\
                           [qt.expect(qt.identity(n), state)]])
     return normalize(spin_axis[:-1])
+
+##################################################################################################################
+
+def qubit_to_vector(qubit):
+    return np.array([[qutip.expect(qutip.sigmax(), qubit)],\
+                     [qutip.expect(qutip.sigmay(), qubit)],\
+                     [qutip.expect(qutip.sigmaz(), qubit)],\
+                     [qutip.expect(qutip.identity(2), qubit)]])
+
+def vector_to_qubit(vector):
+    x, y, z, t = vector.T[0]
+    return (1./2)*(x*qutip.sigmax() + y*qutip.sigmay() + z*qutip.sigmaz() + t*qutip.identity(2))
+
+# n dimensions to n-1-sphere
+def vector_to_angles(xyzs):
+    coordinates = [c.real for c in xyzs.T[0].tolist()[::-1]]
+    n = len(coordinates)-1
+    r = math.sqrt(sum([x**2 for x in coordinates]))
+    angles = []
+    for i in range(n):
+        if i != n-1:
+            angle = coordinates[i]
+            divisor = math.sqrt(sum([coordinates[j]**2 for j in range(i,n+1)]))
+            if divisor == 0:
+                angles.append(0)
+            else: 
+                angles.append(math.acos(angle/divisor))
+        else:
+            angle = None
+            if math.sqrt(coordinates[-1]**2 + coordinates[-2]**2) != 0:
+                angle = coordinates[-2]/math.sqrt(coordinates[-1]**2 + coordinates[-2]**2)
+                angle = math.acos(angle)
+                if coordinates[-1] < 0:
+                    angle = 2*math.pi - angle
+            else:
+                angle = 0
+            angles.append(angle)
+    return angles, r
+
+# n-sphere to n+1 dimensions
+# note: last angle ranges to 2pi, all previous to pi
+def angles_to_vector(angles, r=1):
+    n = len(angles)
+    coordinates = []
+    for i in range(n+1):
+        coordinate = r
+        coordinate *= functools.reduce(operator.mul,\
+                        [math.sin(angles[j]) for j in range(i)], 1)
+        if i != n:
+            coordinate *= math.cos(angles[i])
+        coordinates.append([coordinate])
+    return np.array(coordinates[::-1])
+
+# n-sphere in n+1 dimensions to hyperplane in n dimensions plus infinity
+# projection from [1, 0, 0, 0, ...]
+def stereographic_projection(xyz):
+    coordinates = xyz.T[0]
+    if coordinates[-1] == 1:
+        return len(coordinates)
+    else:
+        return np.array([[coordinate/(1-coordinates[-1])] for coordinate in coordinates[:-1]])
+
+# from hyperplane in n dimensions plus infinity to n-sphere in n+1 dimensions
+def inverse_stereographic_projectionAll(xyz):
+    if isinstance(xyz, int):
+        n = xyz
+        return np.array([[1]]+[[0]]*(n-1))
+    coordinates = xyz.T[0][::-1]
+    s = sum([coordinate**2 for coordinate in coordinates])
+    sphere = [[(s - 1)/(s + 1)]]
+    for coordinate in coordinates:
+        sphere.append([(2*coordinate)/(s + 1)])
+    return np.array(sphere[::-1])
+
+##################################################################################################################
+
+class Variable:    
+    def __init__(self):
+        self.value = None
+        self.dependencies = []
+        self.touched = 0
+
+    def tie(self, other, transformation):
+        self.dependencies.append({"other": other, "transformation": transformation})
+
+    def plug(self, value):
+        self.value = value
+        if self.touched == 0:
+            self.touched = 1
+        elif self.touched == 1:
+            self.touched = 0
+        for dependency in self.dependencies:
+            other, transformation = dependency["other"], dependency["transformation"]
+            if other.touched != self.touched:
+                other.plug(transformation(self.value))
+
+    def __str__(self):
+        return str(self.value)
 
 ##################################################################################################################
 
@@ -292,10 +400,10 @@ def display_error(message=None):
 def display_question(soul, question):
     s = ""
     if isinstance(question, int):
-        s += "%s:%s|%d" % (question, soul.questions[question][0], len(soul.questions[question][0]))
+        s += "{#%s:%s,d=%d}" % (question, soul.questions[question][0], len(soul.questions[question][0]))
     else:
         how, questions, dims = question
-        s += "(%s:%s|%s)" % (how, ",".join([display_question(soul, q) for q in questions]), str(dims))
+        s += "(%s:%s,d=%s)" % (how, ",".join([display_question(soul, q) for q in questions]), str(dims))
     return s
 
 ##################################################################################################################
@@ -650,11 +758,11 @@ class MajoranaDecisionSphere:
             self.decider_sphere.evolve(spin_ops['Z'], inverse=False)
         elif key == "z":
             self.decider_sphere.evolve(spin_ops['Y'], inverse=True)
-        elif key == "e":    
+        elif key == "x":    
             self.decider_sphere.evolve(spin_ops['Y'], inverse=False)
         elif key == "q":
             self.done = True
-        elif key == "x":
+        elif key == "e":
             self.done = True
             self.save = True
 
@@ -856,23 +964,34 @@ class StateSphere:
         vp.scene.unbind('keydown', self.keyboard)
 
     def display_recursively(self, vspheres):
-        background, foreground = vspheres
-        background.display_visuals()
-        for fore in foreground:
-            if isinstance(fore, list):
-                self.display_recursively(fore)
-            else:
-                fore.display_visuals()
+        if not isinstance(vspheres, list):
+            vspheres.display_visuals()
+        elif vspheres == []:
+            return
+        else:
+            background, foreground = vspheres
+            background.display_visuals()
+            for fore in foreground:
+                if isinstance(fore, list):
+                    self.display_recursively(fore)
+                else:
+                    fore.display_visuals()
 
     def destroy_recursively(self, vspheres):
-        background, foreground = vspheres
-        background.visible = False
-        for fore in foreground:
-            if isinstance(fore, list):
-                self.destroy_recursively(fore)
-            else:
-                fore.visible = False
-                del fore
+        if not isinstance(vspheres, list):
+            vspheres.invisible()
+        elif vspheres == []:
+            return
+        else:
+            background, foreground = vspheres
+            background.invisible()
+            for fore in foreground:
+                if isinstance(fore, list):
+                    for f in fore:
+                        self.destroy_recursively(f)
+                else:
+                    fore.invisible()
+                    del fore
 
     def create_recursive(self, start, state, ordering, center, radius):
         state = state.copy()
@@ -925,6 +1044,269 @@ class StateSphere:
                 for i in range(len(questions)):
                     foreground_spheres.append(self.create_recursive(False, state/len(questions), questions[i], new_center, new_radius))
             return [background_sphere, foreground_spheres]
+
+##################################################################################################################
+
+class QubitSphere:
+    def __init__(self, color=vp.color.white,\
+                       n_fiber_points=100,\
+                       parent=None):
+        self.color = color
+        self.n_fiber_points = n_fiber_points
+        self.parent = parent
+
+        self.state = Variable() # 2x2 Density Matrix
+        self.vector = Variable() # spacetime 4-vector
+        self.angles = Variable() # 3 angles of 3-sphere
+
+        self.state.tie(self.vector, qubit_to_vector)
+        self.vector.tie(self.state, vector_to_qubit)
+        self.vector.tie(self.angles, vector_to_angles)
+        self.angles.tie(self.vector, angles_to_vector)
+
+        self.vbase = vp.sphere(color=self.color,\
+                                    radius=0.1,\
+                                    opacity=0.7,\
+                                    emissive=False)
+        self.varrow = vp.arrow(pos=vp.vector(0,0,0),\
+                                    color=self.color,\
+                                    shaftwidth=0.03)
+        self.vfiber = vp.curve(pos=[vp.vector(0,0,0) for i in range(self.n_fiber_points)],\
+                                    color=self.color)
+
+    def update(self, new_state):
+        self.state.plug(new_state)
+
+    def display_visuals(self):
+        base = self.base()
+        if isinstance(base, int):
+            return
+        base_x, base_y, base_z = [c.real for c in self.base().T[0].tolist()]
+        self.vbase.pos = vp.vector(base_x, base_y, base_z)
+        arrow_x, arrow_y, arrow_z = [c.real for c in self.spin_axis()]
+        self.varrow.axis = vp.vector(arrow_x, arrow_y, arrow_z)
+        fiber_points = self.fiber()
+        for i in range(self.n_fiber_points):
+            if not isinstance(fiber_points[i], int):
+                    self.vfiber.modify(i, pos=vp.vector(*fiber_points[i]),\
+                                          color=self.color)
+
+    def base(self):
+        return stereographic_projection(normalize(self.vector.value))
+
+    def fiber(self):
+        circle = np.linspace(0, 2*math.pi, num=self.n_fiber_points)
+        fiber_points = []
+        for angle in circle:
+            transformation = np.array([[math.cos(angle),-1*math.sin(angle),0,0],\
+                                       [math.sin(angle), math.cos(angle),0,0],\
+                                       [0,0,math.cos(angle),-1*math.sin(angle)],\
+                                       [0,0,math.sin(angle),math.cos(angle)]])
+            fiber_points.append(np.real(stereographic_projection(normalize(np.dot(transformation, self.vector.value)))))
+        return fiber_points
+
+    def evolve(self, operator, inverse=True, dt=0.005):
+        if self.parent:
+            i = self.parent.qubits.index(self)
+            upgraded = None
+            if i == 0:
+                upgraded = operator
+            else:
+                upgraded = qutip.identity(2)
+            for j in range(1, self.parent.n_qubits):
+                if j == i:
+                    upgraded = qutip.tensor(upgraded, operator)
+                else:
+                    upgraded = qutip.tensor(upgraded, qutip.identity(2))
+            unitary = (-2*math.pi*im()*upgraded*dt).expm()
+            if inverse:
+                unitary = unitary.dag()
+            self.parent.state.dims = [[2**self.parent.n_qubits],[1]]
+            unitary.dims = [[2**self.parent.n_qubits],[2**self.parent.n_qubits]]
+            self.parent.state = unitary*self.parent.state
+            self.parent.update()
+        else:
+            unitary = (-2*math.pi*im()*operator*dt).expm()
+            if inverse:
+                unitary = unitary.dag()
+            self.update(unitary*self.state.value*unitary.dag())
+
+    def invisible(self):
+        self.vbase.visible = False
+        self.varrow.visible = False
+        self.vfiber.visible = False
+
+    def spin_axis(self):
+        return [qutip.expect(qutip.sigmax(), self.state.value),\
+                qutip.expect(qutip.sigmay(), self.state.value),\
+                qutip.expect(qutip.sigmaz(), self.state.value)]
+
+class MultiQubitSphere:
+    def __init__(self, n_qubits,\
+                       center=vp.vector(0,0,0),\
+                       radius=1,\
+                       color=vp.color.blue,\
+                       show_stars=False,\
+                       show_total_spin=False,\
+                       camera_follows_total_spin=False):
+        self.n_qubits = n_qubits
+        self.center = center
+        self.radius = radius
+        self.color = color
+
+        self.show_stars = show_stars
+        self.show_total_spin = show_total_spin
+        self.camera_follows_total_spin = camera_follows_total_spin
+
+        self.state = qutip.rand_ket(2**self.n_qubits)
+        self.energy = qutip.rand_herm(2**self.n_qubits)
+
+        self.vsphere = MajoranaSphere(self.state,\
+                                      center=self.center,\
+                                      radius=self.radius,\
+                                      sphere_color=self.color,\
+                                      show_stars=self.show_stars,\
+                                      show_arrow=self.show_total_spin)
+
+        self.qubit_colors = [vp.vector(*np.random.rand(3)) for i in range(self.n_qubits)]
+        self.qubits = [QubitSphere(color=self.qubit_colors[i], parent=self) for i in range(self.n_qubits)]
+
+        self.active_qubit = 0
+        self.evolution_on = False
+        self.done = False
+
+        self.update()
+
+    def keyboard(self, event):
+        key = event.key
+        if key.isdigit():
+            i = int(key)
+            if i < self.n_qubits:
+                self.active_qubit = i
+                print(crayons.magenta("qubit #%d active!" % self.active_qubit))
+        elif key == "`":
+             self.active_qubit = -1
+             print(crayons.magenta("the whole is active!"))
+        elif key == "a":
+            if self.active_qubit == -1:
+                self.evolve(self.spin_operators()["X"], inverse=True)
+                self.update()
+            else:
+                self.qubits[self.active_qubit].evolve(qutip.sigmax(), inverse=True)
+        elif key == "d":
+            if self.active_qubit == -1:
+                self.evolve(self.spin_operators()["X"], inverse=False)
+                self.update()
+            else:
+                self.qubits[self.active_qubit].evolve(qutip.sigmax(), inverse=False)
+        elif key == "s":
+            if self.active_qubit == -1:
+                self.evolve(self.spin_operators()["Z"], inverse=True)
+                self.update()
+            else:
+                self.qubits[self.active_qubit].evolve(qutip.sigmaz(), inverse=True)
+        elif key == "w":
+            if self.active_qubit == -1:
+                self.evolve(self.spin_operators()["Z"], inverse=True)
+                self.update()
+            else:
+                self.qubits[self.active_qubit].evolve(qutip.sigmaz(), inverse=False)
+        elif key == "z":
+            if self.active_qubit == -1:
+                self.evolve(self.spin_operators()["Y"], inverse=True)
+                self.update()
+            else:
+                self.qubits[self.active_qubit].evolve(qutip.sigmay(), inverse=True)
+        elif key == "x":
+            if self.active_qubit == -1:
+                self.evolve(self.spin_operators()["Y"], inverse=True)
+                self.update()
+            else:
+                self.qubits[self.active_qubit].evolve(qutip.sigmay(), inverse=False)
+        elif key == "i":
+            if self.evolution_on:
+                self.evolution_on = False
+            else:
+                self.evolution_on = True
+        elif key == "o":
+            self.state = qutip.rand_ket(2**self.n_qubits)
+            self.update()
+        elif key == "p":
+            self.energy = qutip.rand_herm(2**self.n_qubits)
+            self.update()
+        elif key == "q":
+            self.done = True
+
+    def display(self):
+        print(crayons.red(    "\t               +Z             "))
+        print(crayons.green(  "\t               w       +Y     "))
+        print(crayons.blue(   "\t      q quit   |     x        "))
+        print(crayons.yellow( "\t               |   /          "))
+        print(crayons.magenta("\t               | /            "))
+        print(crayons.cyan(   "\t -X a  ________*________ d +X "))
+        print(crayons.magenta("\t             / |              "))
+        print(crayons.yellow( "\t           /   |  i evolve on/off"))
+        print(crayons.blue(   "\t        -Y     |  o new state"))
+        print(crayons.green(  "\t      z        s  p new energy"))
+        print(crayons.red(    "\t              -Z              "))
+        print(crayons.magenta("qubit #%d active!" % self.active_qubit))
+        vp.scene.bind('keydown', self.keyboard)
+        while not self.done: 
+            if self.evolution_on:
+                self.evolve()                  
+            self.display_visuals()
+            if self.camera_follows_total_spin:
+                vp.scene.forward = 2*vp.vector(*self.spin_axis())
+        self.invisible()
+        vp.scene.unbind('keydown', self.keyboard)
+
+    def update(self):
+        state_copy = self.state.copy()
+        state_copy.dims = [[2**self.n_qubits], [1]]
+        self.vsphere.state = state_copy
+        self.state.dims = [[2]*self.n_qubits, [1]*self.n_qubits]
+        for i in range(self.n_qubits):
+            self.qubits[i].update(self.state.ptrace(i))
+
+    def display_visuals(self):
+        self.vsphere.display_visuals()
+        for i in range(self.n_qubits):
+            self.qubits[i].display_visuals()
+
+    def spin_operators(self):
+        n = 2**self.n_qubits
+        spin = (n-1.)/2.
+        return {"X": qutip.jmat(spin, "x"),\
+                "Y": qutip.jmat(spin, "y"),\
+                "Z": qutip.jmat(spin, "z"),\
+                "+": qutip.jmat(spin, "+"),\
+                "-": qutip.jmat(spin, "-")}
+
+    def spin_axis(self):
+        n = 2**self.n_qubits
+        spin = (n-1.)/2.
+        X, Y, Z = qutip.jmat(spin)
+        state_copy = self.state.copy()
+        state_copy.dims = [[2**self.n_qubits],[1]]
+        spin_axis = [qutip.expect(X, state_copy),\
+                     qutip.expect(Y, state_copy),\
+                     qutip.expect(Z, state_copy)]
+        return spin_axis
+
+    def evolve(self, operator=None, inverse=True, dt=0.005):
+        if operator == None:
+            operator = self.energy
+        unitary = (-2*math.pi*im()*operator*dt).expm()
+        if inverse:
+            unitary = unitary.dag()
+        self.state.dims = [[2**self.n_qubits],[1]]
+        self.state = unitary*self.state
+        self.update()
+
+    def invisible(self):
+        self.vsphere.invisible()
+        for qubit in self.qubits:
+            qubit.invisible()
 
 ##################################################################################################################
 
@@ -981,24 +1363,26 @@ def questions___():
         for i, question in enumerate(spheres.questions):
             print("  %d. %s" % (i, ", ".join(question)))
 
-def create___(what):
-    """create *soul/question*"""
+def create___(what, soul_name=None):
+    """create *soul/question* (*soul_name*)"""
     global spheres
     if what == "soul":
-        print(crayons.blue("name?"))
-        soul_name = display_inner_prompt()
-        while soul_name in spheres.souls.keys():
-            display_error(message="already a soul named %s!" % (soul_name))
+        if soul_name == None:
+            print(crayons.blue("name?"))
             soul_name = display_inner_prompt()
-        spheres.add_soul(soul_name)
-    else:
-        if what == "question":
-            answers = []
+        if soul_name in spheres.souls.keys():
+            display_error(message="already a soul named %s!" % (soul_name))
+        else:
+            spheres.add_soul(soul_name)
+    elif what == "question":
+        answers = []
+        next_answer = input("\t.")
+        while next_answer != "":
+            answers.append(next_answer)
             next_answer = input("\t.")
-            while next_answer != "":
-                answers.append(next_answer)
-                next_answer = input("\t.")
-            spheres.add_question(answers)
+        spheres.add_question(answers)
+    else:
+        display_error("what's %s?" % what)
 
 def destroy___(what, which):
     """destroy *soul/question* *soul/question-#* """
@@ -1009,6 +1393,8 @@ def destroy___(what, which):
     elif what == "question":
         if does_question_exist(which):
             spheres.remove_question(int(which))
+    else:
+        display_error("what's %s?" % what)
 
 def clear___(what):
     """clear *souls/questions/all*"""
@@ -1019,6 +1405,8 @@ def clear___(what):
         spheres.clear_questions()
     elif what == "all":
         spheres.clear()
+    else:
+        display_error("what's %s?" % what)
 
 def soul___(soul_name):
     """soul *name*"""
@@ -1054,9 +1442,6 @@ def soul___(soul_name):
         rep += str(soul.state) + "\n"
         rep += crayons.blue("**************************************************************")
         print(rep)
-        if soul.state != None:
-            state_sphere = StateSphere(soul)
-            state_sphere.display()
 
 def ask___(soul_name, question_index):
     """ask *name* *question-#*"""
@@ -1099,6 +1484,7 @@ def vocab___(soul_name):
 
 def order___(soul_name):
     """order *name*"""
+    global spheres
     if does_soul_exist(soul_name):
         soul = spheres.souls[soul_name]
         if len(soul.ordering) != 1:
@@ -1110,6 +1496,39 @@ def order___(soul_name):
             display_error(message="%s in order!" % soul_name)
             soul.state = soul.construct_state()
 
+def state___(soul_name):
+    """state *soul*"""
+    global spheres
+    if does_soul_exist(soul_name):
+        soul = spheres.souls[soul_name]
+        if soul.state != None:
+            state_sphere = StateSphere(soul)
+            state_sphere.display()
+        else:
+            display_error(message="must order %s! no state yet." % soul_name)
+
+def qubits___(n_qubits, show_stars=False, 
+                        show_total_spin=False,
+                        camera_follows_total_spin=False):
+    """qubits *n-qubits* (*show-stars* *show-total-spin* *camera-follows-total-spin*)"""
+    if n_qubits.isdigit():
+        n_qubits = int(n_qubits)
+        if n_qubits < 1:
+            display_error(message="at least 1 qubit please!")
+        else:
+            if isinstance(show_stars, str):
+                show_stars = str_to_bool(show_stars)
+            if isinstance(show_total_spin, str):
+                show_total_spin = str_to_bool(show_total_spin)
+            if isinstance(camera_follows_total_spin, str):
+                camera_follows_total_spin = str_to_bool(camera_follows_total_spin)
+            multi_qubit = MultiQubitSphere(n_qubits, show_stars=show_stars,\
+                                                     show_total_spin=show_total_spin,\
+                                                     camera_follows_total_spin=camera_follows_total_spin)
+            multi_qubit.display()
+    else:
+        display_error(message="must be a #!")
+
 def cmd_loop():
     global spheres
     display_startup_message()
@@ -1119,13 +1538,19 @@ def cmd_loop():
         if len(commands) > 0:
             action = globals().get(commands[0]+"___")
             if action != None:
-                if len(inspect.getargspec(action).args) == len(commands)-1:
-                    if len(commands) > 1:
+                args = inspect.getargspec(action).args
+                defaults = inspect.getargspec(action).defaults
+                if defaults == None:
+                    if len(commands)-1 == len(args):
                         action(*commands[1:])
                     else:
-                        action()
+                        display_error(message=action.__doc__)
                 else:
-                    display_error(message=action.__doc__)
+                    required = len(args)-len(defaults)
+                    if len(commands)-1 >= required and len(commands)-1 <= len(args): 
+                        action(*commands[1:])
+                    else:
+                        display_error(message=action.__doc__)
             else:
                 display_error()
 
