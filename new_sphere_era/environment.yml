@@ -1,0 +1,16 @@
+name: tsi-environment
+channels:
+  - conda-forge
+  - vpython
+dependencies:
+  - numpy
+  - scipy
+  - matplotlib
+  - cython
+  - qutip
+  - sympy
+  - mpmath
+  - vpython
+  - pyglet
+  - pip:
+    - crayons
