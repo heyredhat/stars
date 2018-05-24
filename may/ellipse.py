@@ -12,6 +12,9 @@ class EllipseSphere:
 		self.energy = qt.rand_herm(2)
 		self.dt = 0.01
 
+		self.vrod = vp.arrow(color=vp.color.red,\
+							 pos=vp.vector(0,0,0),\
+							 axis=vp.vector(0,0,1))
 		self.vsphere = vp.sphere(color=vp.color.blue,\
 								 radius=1.0,\
 								 opacity=0.4)
@@ -40,7 +43,7 @@ class EllipseSphere:
 		x, y, z = self.spin_axis()
 		s = np.sign(z)
 		if s == -1:
-			angle = angle-math.pi/2
+			angle = angle+math.pi/2
 		return (a, b, angle)
 
 	def ellipse_points(self, a, b, angle, pts=100):
@@ -94,6 +97,30 @@ class EllipseSphere:
 			self.evolve(qt.sigmaz(), inverse=True)
 		elif key == "x":
 			self.evolve(qt.sigmaz(), inverse=False)
+		elif key == "1":
+			l, v = qt.sigmax().eigenstates()
+			self.state = v[0]
+			self.touched = True
+		elif key == "2":
+			l, v = qt.sigmax().eigenstates()
+			self.state = v[1]
+			self.touched = True
+		elif key == "3":
+			l, v = qt.sigmay().eigenstates()
+			self.state = v[0]
+			self.touched = True
+		elif key == "4":
+			l, v = qt.sigmay().eigenstates()
+			self.state = v[1]
+			self.touched = True
+		elif key == "5":
+			l, v = qt.sigmaz().eigenstates()
+			self.state = v[0]
+			self.touched = True
+		elif key == "6":
+			l, v = qt.sigmaz().eigenstates()
+			self.state = v[1]
+			self.touched = True
 		elif key == "q":
 			self.done = True
 		elif key == "e":
@@ -114,6 +141,7 @@ print("q to quit")
 print("a/d is -/+ x rotation")
 print("s/w is -/+ y rotation")
 print("z/x is -/+ z rotation")
+print("1 2 3 4 5 6 collapse to X- X+ Y- Y+ Z- Z+")
 print("e to pause evolution")
 print("p to generate a new random energy function")
 print("[ to slow evolution by 0.01")
