@@ -41,16 +41,16 @@ class EllipseSphere:
 		b = math.sqrt( (1 - math.sqrt(1-(math.sin(2*theta)**2)*(math.sin(beta)**2)))/2. )
 		angle = math.atan(math.tan(2*math.acos(psi_xR))*math.cos(beta))/2.
 		x, y, z = self.spin_axis()
-		s = np.sign(z)
-		if s == -1:
-			angle = angle+math.pi/2
+		if np.sign(z) == -1:
+			angle = angle-math.pi/2
 		return (a, b, angle)
 
 	def ellipse_points(self, a, b, angle, pts=100):
 		points = np.linspace(0,2*math.pi,pts)
 		X = a*np.cos(points)*math.cos(angle) - math.sin(angle)*b*np.sin(points)
 		Y = a*np.cos(points)*math.sin(angle) + math.cos(angle)*b*np.sin(points)
-		return [vp.vector(X[i], Y[i], 0) for i in range(pts)]
+		points = [vp.vector(X[i], Y[i], 0) for i in range(pts)]
+		return points
 
 	def spin_axis(self):
 		return [qt.expect(qt.sigmax(), self.state),\
