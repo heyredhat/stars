@@ -82,7 +82,6 @@
 			// 		<vector|matrix|vector>
 			var expect = function(vector, matrix) {
 				return Jmat.dot(Jmat.Matrix.conj(vector), Jmat.Matrix.conj(vector).mul(matrix));
-				//return Jmat.dot(vector, vector.mul(matrix));
 			};
 
 			// Evolve quantum state vector forward/backwards in time by dt given hermitian "energy" operator
@@ -131,15 +130,12 @@
 				return [b, a, heli, angle];
 			};
 
+			// Qubit to Minkowski 4-vector
 			var vector_to_mink = function(vector) {
 				return Jmat.Matrix([[expect(vector, X),
 								     expect(vector, Y),
 								     expect(vector, Z),
 								     expect(vector, Jmat.Matrix.identity(2))]]);
-			};
-
-			var mink_to_vector = function(mink) {
-				   return (1./2)*(mink.e[0][0]*X + mink.e[0][1]*Y+ mink.e[0][2]*Z + mink.e[0][3]*Jmat.Matrix.identity(2));
 			};
 
    			// n-sphere in n+1 dimensions to hyperplane in n dimensions plus infinity
@@ -156,14 +152,6 @@
 				}
 			}
 
-			/*test = Jmat.Matrix([[Jmat.Complex(0.5562948220775338, 0.209615757439483), Jmat.Complex(-0.37668558574265937, 0.7104261218849617)]]);
-			console.log(test);
-			mink = vector_to_mink(test);
-			console.log(mink);
-			normal = Jmat.Matrix.normalize(mink);
-			proj = stereographic_projection(normal);
-			console.log(proj);*/
-
 			function linspace(a,b,n) {
 			    if(typeof n === "undefined") n = Math.max(Math.round(b-a)+1,1);
 			    if(n<2) { return n===1?[a]:[]; }
@@ -178,7 +166,6 @@
 				mink = vector_to_mink(vector);
 				circle_points = linspace(0, 2*Math.PI, 50);
 				fiber_pts = []
-				//console.log("<")
 				for (var i = 0; i < circle_points.length; i++) {
 					angle = circle_points[i];
 					transformation = Jmat.Matrix([[Math.cos(angle),-1*Math.sin(angle),0,0],
@@ -186,29 +173,20 @@
                                        			  [0,0,Math.cos(angle),-1*Math.sin(angle)],
                                        			  [0,0,Math.sin(angle),Math.cos(angle)]]);
 					point = stereographic_projection(Jmat.Matrix.normalize(Jmat.Matrix.conj(mink).mul(Jmat.Matrix.adj(transformation))));
-					//console.log("{")
-					//console.log(transformation);
-					//console.log(Jmat.Matrix.conj(mink).mul(Jmat.Matrix.adj(transformation)));
-					//console.log("}")
 					pt = [];
 					for (var j = 0; j < point.e[0].length; j++) {
 						pt.push(point.e[0][j].re);
 					}
 					fiber_pts.push(pt);
 				}
-				//console.log(">")
-				//console.log(fiber_pts);
 				return fiber_pts;
 			}
-
-			//pts = fiber_points(test);
-			//console.log(pts);
 
 			/*************************************************************************
 				INITIALIZE QUANTUM
 			*************************************************************************/
 			//var state = Jmat.Matrix([[Jmat.Complex(1,0), Jmat.Complex(0,0)]]);
-			var state = Jmat.Matrix([[Jmat.Complex(0.5562948220775338, 0.209615757439483), Jmat.Complex(-0.37668558574265937, 0.7104261218849617)]]);//rand_state(2);
+			var state = rand_state(2);
 			var energy = rand_herm(2);
 			var evolving = false;
 			var show_ellipse = true;
@@ -267,8 +245,6 @@
 			for (var i = 0; i < fiber_pts.length; ++i) {
 				fiber_pts[i] = new THREE.Vector3(fiber_pts[i][0], fiber_pts[i][1], fiber_pts[i][2]);
 			}
-			//console.log(fiber_pts);
-			//var fiber_curve = new THREE.SplineCurve(fiber_pts);
 			var fiber_geometry = new THREE.Geometry();
 			fiber_geometry.vertices = fiber_pts;
 			var fiber_material = new THREE.LineBasicMaterial({color: 0xff0000});
@@ -340,7 +316,6 @@
 				for (var i = 0; i < fiber_pts.length; ++i) {
 					fiber_pts[i] = new THREE.Vector3(fiber_pts[i][0], fiber_pts[i][1], fiber_pts[i][2]);
 				}
-				//fiber_curve = new THREE.SplineCurve(fiber_pts);
 				fiber_geometry.vertices = fiber_pts;
 				fiber_geometry.verticesNeedUpdate = true;
 
@@ -366,7 +341,6 @@
 				}
 				document.getElementById("state").innerHTML = state.toString(2) + " aka\n        " + str + "]]";
 			};
-
 		</script>
 	</body>
 </html>
