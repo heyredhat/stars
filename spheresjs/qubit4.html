@@ -45,22 +45,19 @@
  |                                 | 
  |               -Y                | 
   ---------------------------------
- | '1' make X measurement          |
- | '2' make Y measurement          |
- | '3' make Z measurement          |
-  ---------------------------------
  | 'u' toggle time evolution       |
   ---------------------------------
  | 'i' random state                |
  | 'o' random energy               |
- | 'p' random measurement          |
   ---------------------------------
  | '[' decrease dt                 |
  | ']' increase dt    dt @ <span id="dt"></span>  |
   ---------------------------------
+ | 'e' toggle ellipse              |
+ | 'f' toggle fiber                |
+  ---------------------------------
  | '/' toggle help                 |
  | '`' toggle status               |
- | '|' toggle explanation          |
   ---------------------------------</pre></div>
   		<div id="status"><pre>
  state: <span id="state"></span></pre>
@@ -74,10 +71,18 @@
 			/*************************************************************************
 				QUANTUM METHODS
 			*************************************************************************/
+			var X = Jmat.Matrix([[Jmat.Complex(0,0), Jmat.Complex(1,0)],
+								 [Jmat.Complex(1,0), Jmat.Complex(0,0)]]); // Pauli Sigma X
+			var Y = Jmat.Matrix([[Jmat.Complex(0,0), Jmat.Complex(0,-1)],
+								 [Jmat.Complex(0,1), Jmat.Complex(0,0)]]); // Pauli Sigma Y
+			var Z = Jmat.Matrix([[Jmat.Complex(1,0), Jmat.Complex(0,0)],
+								 [Jmat.Complex(0,0), Jmat.Complex(-1,0)]]); // Pauli Sigma Z
+
 			// Expectation value of quantum state vector on operator given by matrix
 			// 		<vector|matrix|vector>
 			var expect = function(vector, matrix) {
-				return Jmat.dot(vector.mul(matrix), vector);
+				return Jmat.dot(Jmat.Matrix.conj(vector), Jmat.Matrix.conj(vector).mul(matrix));
+				//return Jmat.dot(vector, vector.mul(matrix));
 			};
 
 			// Evolve quantum state vector forward/backwards in time by dt given hermitian "energy" operator
@@ -94,76 +99,120 @@
 				return vector.mul(unitary);
 			};
 
-			var rand = function(min, max) {
-			    return Math.random() * (max - min) + min;
-			};
-			 
-			var getRandomItem = function(list, weight) {
-			    var total_weight = weight.reduce(function(prev, cur, i, arr) {
-			        return prev + cur;
-			    });
-			    var random_num = rand(0, total_weight);
-			    var weight_sum = 0;
-			    for (var i = 0; i < list.length; i++) {
-			        weight_sum += weight[i];
-			        weight_sum = +weight_sum.toFixed(2);
-			        if (random_num <= weight_sum) {
-			            return list[i];
-			        }
-			    }     
-			};
-
-			function range(start, end) {
-			  return Array(end - start + 1).fill().map((_, idx) => start + idx);
-			}
-
+			// Return random complex state vector with given dimensionality
 			var rand_state = function(dims) {
-				return Jmat.Matrix.normalize(Jmat.Matrix.random(1, 2, {'complex': true}));
+				return Jmat.Matrix.normalize(Jmat.Matrix.random(1, dims, {'complex': true}));
 			};
 
+			// Return random hermitian matrix of given dimensionality
 			var rand_herm = function(dims) {
 				return Jmat.Matrix.random(dims, dims, {'hermitian': true});
 			};
 
-
-
-			var X = Jmat.Matrix([[Jmat.Complex(0,0), Jmat.Complex(1,0)],
-								 [Jmat.Complex(1,0), Jmat.Complex(0,0)]]); // Pauli Sigma X
-			var Y = Jmat.Matrix([[Jmat.Complex(0,0), Jmat.Complex(0,-1)],
-								 [Jmat.Complex(0,1), Jmat.Complex(0,0)]]); // Pauli Sigma Y
-			var Z = Jmat.Matrix([[Jmat.Complex(1,0), Jmat.Complex(0,0)],
-								 [Jmat.Complex(0,0), Jmat.Complex(-1,0)]]); // Pauli Sigma Z
-
-			var measure = function(vector, hermitian) {
-
-
-
-
-				console.log(Jmat.render(Jmat.Matrix.evd(Z)));
-				console.log(Jmat.Matrix.eig(Z));
-
-				eigs = Jmat.eig(hermitian, 2);
-				eigenvalues = eigs.l;
-				eigenvectors = eigs.v;
-
-				amplitudes = [];
-				for(var i = 0; i < eigenvalues.length; i++) {
-					amplitude = Jmat.dot(vector, Jmat.Matrix(eigenvectors.e[i]));
-					amplitudes.push(amplitude);
+			// Returns ellipse data given qubit vector
+			var state_to_ellipse = function(vector) {
+				l = vector.e[0][0];
+				w = vector.e[0][1];
+				lR = Jmat.Complex.abs(l);
+				lTH = Jmat.Complex.arg(l);
+				wR = Jmat.Complex.abs(w);
+				wTH = Jmat.Complex.arg(w);
+				beta = (wTH - lTH);
+				theta = Math.acos(lR);
+				a = Math.sqrt( (1 + Math.sqrt(1-(Math.pow(Math.sin(2*theta),2))*(Math.pow(Math.sin(beta),2))))/2 );
+				b = Math.sqrt( (1 - Math.sqrt(1-(Math.pow(Math.sin(2*theta),2))*(Math.pow(Math.sin(beta),2))))/2 );
+				angle = Math.atan(Math.tan(2*Math.acos(lR))*Math.cos(beta))/2;
+				z = expect(vector, Z).re;
+				heli = true;
+				if (z < 0) {
+					heli = false;
+					angle = angle-(Math.PI/2)
 				}
-
-				normalized_amplitudes = Jmat.Matrix.normalize(Jmat.Matrix(amplitudes));
-				probabilities = Jmat.Matrix.mul(normalized_amplitudes, Jmat.Matrix.transjugate(normalized_amplitudes)).e[0];
-				for(var i = 0; i < eigenvalues.length; i++) {
-					probabilities[i] = probabilities[i].re
-				}
-
-				console.log(normalized_amplitudes);
-				console.log(probabilities);
-				choices = range(0, probabilities.length);
-				choice = getRandomItem(choices, probabilities);
-				return [eigenvalues[choice], Jmat.Matrix(eigenvectors.e[choice])];
+				return [b, a, heli, angle];
 			};
+
+			var vector_to_mink = function(vector) {
+				return Jmat.Matrix([[expect(vector, X),
+								     expect(vector, Y),
+								     expect(vector, Z),
+								     expect(vector, Jmat.Matrix.identity(2))]]);
+			};
+
+			var mink_to_vector = function(mink) {
+				   return (1./2)*(mink.e[0][0]*X + mink.e[0][1]*Y+ mink.e[0][2]*Z + mink.e[0][3]*Jmat.Matrix.identity(2));
+			};
+
+   			// n-sphere in n+1 dimensions to hyperplane in n dimensions plus infinity
+			// projection from [1, 0, 0, 0, ...]
+			var stereographic_projection = function(mink) {
+				if (mink.e[0][mink.e[0].length-1] == 1) {
+					return mink.e[0].length;
+				} else {
+					coordinates = [];
+					for (var i = 0; i < mink.e[0].length-1; ++i) {
+						coordinates.push(Jmat.div(mink.e[0][i],Jmat.sub(1,mink.e[0][mink.e[0].length-1])));
+					}
+					return Jmat.Matrix([coordinates]);
+				}
+			}
+
+			/*test = Jmat.Matrix([[Jmat.Complex(0.5562948220775338, 0.209615757439483), Jmat.Complex(-0.37668558574265937, 0.7104261218849617)]]);
+			console.log(test);
+			mink = vector_to_mink(test);
+			console.log(mink);
+			normal = Jmat.Matrix.normalize(mink);
+			proj = stereographic_projection(normal);
+			console.log(proj);*/
+
+			function linspace(a,b,n) {
+			    if(typeof n === "undefined") n = Math.max(Math.round(b-a)+1,1);
+			    if(n<2) { return n===1?[a]:[]; }
+			    var i,ret = Array(n);
+			    n--;
+			    for(i=n;i>=0;i--) { ret[i] = (i*b+(n-i)*a)/n; }
+			    return ret;
+			}
+
+			// Fiber
+			var fiber_points = function(vector) {
+				mink = vector_to_mink(vector);
+				circle_points = linspace(0, 2*Math.PI, 50);
+				fiber_pts = []
+				//console.log("<")
+				for (var i = 0; i < circle_points.length; i++) {
+					angle = circle_points[i];
+					transformation = Jmat.Matrix([[Math.cos(angle),-1*Math.sin(angle),0,0],
+                                       		      [Math.sin(angle), Math.cos(angle),0,0],
+                                       			  [0,0,Math.cos(angle),-1*Math.sin(angle)],
+                                       			  [0,0,Math.sin(angle),Math.cos(angle)]]);
+					point = stereographic_projection(Jmat.Matrix.normalize(Jmat.Matrix.conj(mink).mul(Jmat.Matrix.adj(transformation))));
+					//console.log("{")
+					//console.log(transformation);
+					//console.log(Jmat.Matrix.conj(mink).mul(Jmat.Matrix.adj(transformation)));
+					//console.log("}")
+					pt = [];
+					for (var j = 0; j < point.e[0].length; j++) {
+						pt.push(point.e[0][j].re);
+					}
+					fiber_pts.push(pt);
+				}
+				//console.log(">")
+				//console.log(fiber_pts);
+				return fiber_pts;
+			}
+
+			//pts = fiber_points(test);
+			//console.log(pts);
+
+			/*************************************************************************
+				INITIALIZE QUANTUM
+			*************************************************************************/
+			//var state = Jmat.Matrix([[Jmat.Complex(1,0), Jmat.Complex(0,0)]]);
+			var state = Jmat.Matrix([[Jmat.Complex(0.5562948220775338, 0.209615757439483), Jmat.Complex(-0.37668558574265937, 0.7104261218849617)]]);//rand_state(2);
+			var energy = rand_herm(2);
+			var evolving = false;
+			var show_ellipse = true;
+			var show_fiber = true;
 
 			/*************************************************************************
 				INITIALIZE GRAPHICS
@@ -203,13 +252,29 @@
 			var up = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), 1, 0xffff00, 0.1);
 			scene.add(up); 
 
-			/*************************************************************************
-				INITIALIZE QUANTUM
-			*************************************************************************/
-			var state = Jmat.Matrix([[Jmat.Complex(1,0), Jmat.Complex(0,0)]]);
-			var energy = rand_herm(2);
-			var evolving = false;
-			
+			// Polarization ellipse
+			var ellipse_data = state_to_ellipse(state);
+			var ellipse_curve = new THREE.EllipseCurve(0, 0, ellipse_data[0], ellipse_data[1], 0, 2*Math.PI, ellipse_data[2], ellipse_data[3]);
+			var ellipse_points = ellipse_curve.getPoints(50);
+			var ellipse_geometry = new THREE.BufferGeometry().setFromPoints(ellipse_points);
+			ellipse_geometry.attributes.position.dynamic = true;
+			var ellipse_material = new THREE.LineBasicMaterial({color: 0xffffff });
+			var ellipse = new THREE.Line(ellipse_geometry, ellipse_material);
+			scene.add(ellipse)
+
+			// Hopf fiber
+			fiber_pts = fiber_points(state);
+			for (var i = 0; i < fiber_pts.length; ++i) {
+				fiber_pts[i] = new THREE.Vector3(fiber_pts[i][0], fiber_pts[i][1], fiber_pts[i][2]);
+			}
+			//console.log(fiber_pts);
+			//var fiber_curve = new THREE.SplineCurve(fiber_pts);
+			var fiber_geometry = new THREE.Geometry();
+			fiber_geometry.vertices = fiber_pts;
+			var fiber_material = new THREE.LineBasicMaterial({color: 0xff0000});
+			var fiber = new THREE.Line(fiber_geometry, fiber_material);
+			scene.add(fiber);
+
 			/*************************************************************************
 				KEYBOARD INTERACTION
 			*************************************************************************/
@@ -229,46 +294,26 @@
 			        state = evolve(state, Z, dt, true); 
 			    } else if (keyCode == 88) { 			 // x : Z+ rotation
 			        state = evolve(state, Z, dt, false); 
-			    } else if (keyCode == 49) { 			 // 1 : X measurement
-			    	result = measure(state, X);
-			    	eigenvalue = result[0];
-			    	eigenvector = result[1];
-			    	console.log("(((");
-			    	console.log(eigenvalue);
-			    	console.log(eigenvector);
-			    	state = eigenvector;
-			    } else if (keyCode == 50) { 			 // 2 : Y measurement
-			    	result = measure(state, Y)
-			    	eigenvalue = result[0];
-			    	eigenvector = result[1];
-			    	state = eigenvector;		
-			    } else if (keyCode == 51) { 			 // 3 : Z measurement
-			    	result = measure(state, Z)
-			    	eigenvalue = result[0];
-			    	eigenvector = result[1];
-			    	state = eigenvector;
 				} else if (keyCode == 85) { 			 // u : toggle time evolution
  					evolving = evolving == true ? false : true;
  				} else if (keyCode == 73) { 			 // i : random state
  					state = rand_state(2);
  				} else if (keyCode == 79) { 			 // o : random energy
  					energy = rand_herm(2);
- 				} else if (keyCode == 80) { 			 // p : random measurement
- 					result = measure(state, rand_herm(2))
-			    	eigenvalue = result[0]
-			    	eigenvector = result[1]
-			    	state = eigenvector	
 				} else if (keyCode == 219) { 			 // [ : decrease dt
-					dt = dt-0.001
+					dt = dt-0.001;
 				} else if (keyCode == 221) { 			 // ] : increase dt
-					dt = dt+0.001
+					dt = dt+0.001;
+				} else if (keyCode == 69) { 			 // e : toggle ellipse
+					show_ellipse = show_ellipse == true ? false : true;
+				} else if (keyCode == 70) {				 // f : toggle fiber
+					show_fiber = show_fiber == true ? false : true;
 				} else if (keyCode == 191) { 		     // / : toggle help
 			    	control_pane = document.getElementById("controls");
 			    	control_pane.style.display = control_pane.style.display == "none" ? "block" : "none";
 			    } else if (keyCode == 192) { 		     // ` : toggle status
 			    	status_pane = document.getElementById("status");
 			    	status_pane.style.display = status_pane.style.display == "none" ? "block" : "none";
-			    } else if (keyCode == 220) { 		     // \ : toggle explanation
 			    }
 			};
 			
@@ -277,23 +322,51 @@
 			*************************************************************************/
 			animate();
 			function animate() {
+				// Update quantum
 				if (evolving == true) {
 					state = evolve(state, energy, dt, false)
 				}
 				star.position.set(expect(state, X), expect(state, Y), expect(state, Z));
+				
+				ellipse.visible = show_ellipse;
+				ellipse_data = state_to_ellipse(state);
+				ellipse_curve = new THREE.EllipseCurve(0, 0, ellipse_data[0], ellipse_data[1], 0, 2*Math.PI, ellipse_data[2], ellipse_data[3]);
+				ellipse_points = ellipse_curve.getPoints(50);
+				ellipse_geometry.setFromPoints(ellipse_points)
+				ellipse_geometry.attributes.position.needsUpdate = true;
 
+				fiber.visible = show_fiber;
+				fiber_pts = fiber_points(state);
+				for (var i = 0; i < fiber_pts.length; ++i) {
+					fiber_pts[i] = new THREE.Vector3(fiber_pts[i][0], fiber_pts[i][1], fiber_pts[i][2]);
+				}
+				//fiber_curve = new THREE.SplineCurve(fiber_pts);
+				fiber_geometry.vertices = fiber_pts;
+				fiber_geometry.verticesNeedUpdate = true;
+
+				// Update graphics
 				requestAnimationFrame(animate);
 				camera_controls.update();
 				renderer.render(scene, camera);
 
-				document.getElementById("state").innerHTML = state.toString(2);
-				
+				// Update help
 				if (dt < 0) {
 					document.getElementById("dt").innerHTML = dt.toFixed(3);
 				} else {
 					document.getElementById("dt").innerHTML = dt.toFixed(3) + " ";
 				}
+
+				// Update status
+				str = "[[";
+				for (var i = 0; i < state.e[0].length; i++) {
+					str += Jmat.Complex.toStringPolar(state.e[0][i], 2);
+					if (i < state.e[0].length-1) {
+						str += ", ";
+					}
+				}
+				document.getElementById("state").innerHTML = state.toString(2) + " aka\n        " + str + "]]";
 			};
+
 		</script>
 	</body>
 </html>
