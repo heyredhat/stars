@@ -82,6 +82,7 @@
 			// 		<vector|matrix|vector>
 			var expect = function(vector, matrix) {
 				return Jmat.dot(Jmat.Matrix.conj(vector), Jmat.Matrix.conj(vector).mul(matrix));
+				//return Jmat.dot(vector, vector.mul(matrix));
 			};
 
 			// Evolve quantum state vector forward/backwards in time by dt given hermitian "energy" operator
